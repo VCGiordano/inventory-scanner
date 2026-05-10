@@ -1,0 +1,12 @@
+{
+  "name": "bernies-inventory-scanner",
+  "version": "1.0.0",
+  "description": "Private scanner utility for Shopify inventory adjustments",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=20.0.0" },
+  "dependencies": {
+    "express": "^4.18.3",
+    "dotenv": "^16.4.5"
+  }
+}
