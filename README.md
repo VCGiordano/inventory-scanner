@@ -1,16 +1,9 @@
+
 # Bernie's Inventory Scanner
 
-Private scanner webpage for Shopify inventory adjustments.
+Simple starter deployment for Railway.
 
-## Required environment variables
-
-- SHOPIFY_STORE
+Add Railway Variables:
 - SHOPIFY_CLIENT_ID
 - SHOPIFY_CLIENT_SECRET
-- APP_PIN
-- SHOPIFY_LOCATION_ID (optional if store has one location)
-
-## Start
-
-npm install
-npm start
+- SHOPIFY_STORE
