@@ -1,4 +1,3 @@
-
 const express = require("express");
 const crypto = require("crypto");
 
@@ -8,124 +7,121 @@ const PORT = process.env.PORT || 3000;
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-const SHOPIFY_STORE = process.env.SHOPIFY_STORE || process.env.SHOPIFY_SHOP;
+const SHOPIFY_STORE = (process.env.SHOPIFY_STORE || "").replace(/^https?:\/\//, "").replace(/\/$/, "");
 const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
-const SHOPIFY_LOCATION_ID = process.env.SHOPIFY_LOCATION_ID;
+const SHOPIFY_LOCATION_ID = process.env.SHOPIFY_LOCATION_ID || "1";
 const APP_PIN = process.env.APP_PIN || "1234";
+const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
+const SCOPES = "read_products,read_inventory,write_inventory";
 
-let cachedToken = null;
-let tokenExpiresAt = 0;
+let installedAccessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || null;
 let lastScan = null;
-let lastScanAtByBarcode = new Map();
+let recent = new Map();
 
-function cleanShopHost(raw) {
-  if (!raw) return "";
-  let shop = raw.trim();
-  shop = shop.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
-  if (!shop.endsWith(".myshopify.com")) shop = `${shop}.myshopify.com`;
-  return shop;
-}
-
-const SHOP_HOST = cleanShopHost(SHOPIFY_STORE);
-
-function requireEnv() {
-  const missing = [];
-  if (!SHOP_HOST) missing.push("SHOPIFY_STORE");
-  if (!SHOPIFY_CLIENT_ID) missing.push("SHOPIFY_CLIENT_ID");
-  if (!SHOPIFY_CLIENT_SECRET) missing.push("SHOPIFY_CLIENT_SECRET");
-  if (!SHOPIFY_LOCATION_ID) missing.push("SHOPIFY_LOCATION_ID");
-  return missing;
+function shopHost() {
+  if (!SHOPIFY_STORE) return "";
+  return SHOPIFY_STORE.endsWith(".myshopify.com") ? SHOPIFY_STORE : `${SHOPIFY_STORE}.myshopify.com`;
 }
 
 function locationGid() {
-  if (!SHOPIFY_LOCATION_ID) return null;
   if (SHOPIFY_LOCATION_ID.startsWith("gid://shopify/Location/")) return SHOPIFY_LOCATION_ID;
   return `gid://shopify/Location/${SHOPIFY_LOCATION_ID}`;
 }
 
-async function getAccessToken() {
-  if (cachedToken && Date.now() < tokenExpiresAt - 60_000) return cachedToken;
-
-  const url = `https://${SHOP_HOST}/admin/oauth/access_token`;
-  const body = new URLSearchParams({
-    grant_type: "client_credentials",
-    client_id: SHOPIFY_CLIENT_ID,
-    client_secret: SHOPIFY_CLIENT_SECRET
-  });
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body
-  });
-
-  const text = await response.text();
-
-  if (!response.ok) {
-    throw new Error(`Token request failed (${response.status}): ${text}`);
-  }
-
-  const data = JSON.parse(text);
-  cachedToken = data.access_token;
-  tokenExpiresAt = Date.now() + ((data.expires_in || 3600) * 1000);
-  return cachedToken;
+function requireSetup() {
+  const missing = [];
+  if (!SHOPIFY_STORE) missing.push("SHOPIFY_STORE");
+  if (!SHOPIFY_CLIENT_ID) missing.push("SHOPIFY_CLIENT_ID");
+  if (!SHOPIFY_CLIENT_SECRET) missing.push("SHOPIFY_CLIENT_SECRET");
+  if (!APP_URL) missing.push("APP_URL");
+  return missing;
 }
 
-async function shopifyGraphql(query, variables = {}) {
-  const token = await getAccessToken();
+function installUrl() {
+  const shop = shopHost();
+  const state = crypto.randomBytes(16).toString("hex");
+  const redirectUri = `${APP_URL}/auth/callback`;
+  const params = new URLSearchParams({
+    client_id: SHOPIFY_CLIENT_ID || "",
+    scope: SCOPES,
+    redirect_uri: redirectUri,
+    state
+  });
+  return `https://${shop}/admin/oauth/authorize?${params.toString()}`;
+}
 
-  const response = await fetch(`https://${SHOP_HOST}/admin/api/2025-10/graphql.json`, {
+app.get("/auth", (req, res) => {
+  const missing = requireSetup();
+  if (missing.length) return res.send(render({ error: `Missing Railway variables: ${missing.join(", ")}` }));
+  res.redirect(installUrl());
+});
+
+app.get("/auth/callback", async (req, res) => {
+  try {
+    const { code, shop } = req.query;
+    if (!code) throw new Error("Missing authorization code from Shopify.");
+
+    const response = await fetch(`https://${shop}/admin/oauth/access_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: SHOPIFY_CLIENT_ID,
+        client_secret: SHOPIFY_CLIENT_SECRET,
+        code
+      })
+    });
+
+    const text = await response.text();
+    if (!response.ok) throw new Error(`Token exchange failed ${response.status}: ${text}`);
+
+    const data = JSON.parse(text);
+    installedAccessToken = data.access_token;
+    res.redirect("/");
+  } catch (e) {
+    res.send(render({ error: e.message }));
+  }
+});
+
+async function gql(query, variables = {}) {
+  if (!installedAccessToken) throw new Error("App is not installed yet. Click INSTALL / AUTHORIZE SHOPIFY first.");
+
+  const response = await fetch(`https://${shopHost()}/admin/api/2025-10/graphql.json`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Shopify-Access-Token": token
+      "X-Shopify-Access-Token": installedAccessToken
     },
     body: JSON.stringify({ query, variables })
   });
 
   const json = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    throw new Error(`GraphQL HTTP error (${response.status}): ${JSON.stringify(json)}`);
-  }
-
-  if (json.errors) {
-    throw new Error(`GraphQL error: ${JSON.stringify(json.errors)}`);
-  }
-
+  if (!response.ok) throw new Error(`Shopify HTTP ${response.status}: ${JSON.stringify(json)}`);
+  if (json.errors) throw new Error(`Shopify GraphQL error: ${JSON.stringify(json.errors)}`);
   return json.data;
 }
 
-function escapeSearchValue(value) {
-  return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"').trim();
+function esc(v) {
+  return String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"').trim();
 }
 
-async function findVariantByBarcode(barcode) {
-  const queryString = `barcode:${escapeSearchValue(barcode)}`;
-
+async function findVariant(barcode) {
   const query = `
-    query FindVariant($query: String!, $locationId: ID!) {
-      productVariants(first: 5, query: $query) {
+    query FindVariant($q: String!, $locationId: ID!) {
+      productVariants(first: 5, query: $q) {
         edges {
           node {
             id
             title
             sku
             barcode
+            product { title vendor }
             inventoryItem {
               id
               tracked
               inventoryLevel(locationId: $locationId) {
-                quantities(names: ["available"]) {
-                  name
-                  quantity
-                }
+                quantities(names: ["available"]) { name quantity }
               }
-            }
-            product {
-              title
-              vendor
             }
           }
         }
@@ -133,58 +129,29 @@ async function findVariantByBarcode(barcode) {
     }
   `;
 
-  const data = await shopifyGraphql(query, {
-    query: queryString,
-    locationId: locationGid()
-  });
-
+  const data = await gql(query, { q: `barcode:${esc(barcode)}`, locationId: locationGid() });
   const variants = data.productVariants.edges.map(e => e.node);
 
-  if (variants.length === 0) {
-    throw new Error(`No Shopify variant found for barcode: ${barcode}`);
-  }
+  if (!variants.length) throw new Error(`No product found for barcode: ${barcode}`);
+  if (variants.length > 1) throw new Error(`Duplicate barcode found on ${variants.length} variants.`);
 
-  if (variants.length > 1) {
-    throw new Error(`Duplicate barcode found on ${variants.length} variants. Fix this barcode before using scanner.`);
-  }
+  const v = variants[0];
+  if (!v.inventoryItem.tracked) throw new Error("Product found, but inventory is not tracked.");
+  const available = v.inventoryItem.inventoryLevel?.quantities?.[0]?.quantity;
+  if (available === undefined || available === null) throw new Error("No inventory level found at this location.");
 
-  const variant = variants[0];
-
-  if (!variant.inventoryItem?.tracked) {
-    throw new Error(`Found product, but inventory is not tracked for this variant.`);
-  }
-
-  const available = variant.inventoryItem.inventoryLevel?.quantities?.[0]?.quantity;
-
-  if (available === undefined || available === null) {
-    throw new Error(`Found product, but no inventory level exists at this Shopify location.`);
-  }
-
-  return { variant, available };
+  return { variant: v, available };
 }
 
-async function adjustInventory({ barcode, delta }) {
-  const { variant, available } = await findVariantByBarcode(barcode);
-
-  if (delta < 0 && available <= 0) {
-    throw new Error(`Inventory is already ${available}. Not subtracting.`);
-  }
+async function adjust(barcode, delta) {
+  const { variant, available } = await findVariant(barcode);
+  if (delta < 0 && available <= 0) throw new Error(`Inventory is already ${available}. Not subtracting.`);
 
   const mutation = `
     mutation AdjustInventory($input: InventoryAdjustQuantitiesInput!) {
       inventoryAdjustQuantities(input: $input) {
-        userErrors {
-          field
-          message
-        }
-        inventoryAdjustmentGroup {
-          createdAt
-          reason
-          changes {
-            name
-            delta
-          }
-        }
+        userErrors { field message }
+        inventoryAdjustmentGroup { createdAt }
       }
     }
   `;
@@ -193,25 +160,18 @@ async function adjustInventory({ barcode, delta }) {
     reason: "correction",
     name: "available",
     referenceDocumentUri: `bernies-scanner://${Date.now()}-${crypto.randomUUID()}`,
-    changes: [
-      {
-        delta,
-        inventoryItemId: variant.inventoryItem.id,
-        locationId: locationGid()
-      }
-    ]
+    changes: [{
+      delta,
+      inventoryItemId: variant.inventoryItem.id,
+      locationId: locationGid()
+    }]
   };
 
-  const data = await shopifyGraphql(mutation, { input });
-  const result = data.inventoryAdjustQuantities;
+  const data = await gql(mutation, { input });
+  const errs = data.inventoryAdjustQuantities.userErrors;
+  if (errs && errs.length) throw new Error(errs.map(e => e.message).join("; "));
 
-  if (result.userErrors && result.userErrors.length) {
-    throw new Error(result.userErrors.map(e => e.message).join("; "));
-  }
-
-  const newAvailable = available + delta;
-
-  lastScan = {
+  const result = {
     barcode,
     delta,
     undoDelta: -delta,
@@ -219,163 +179,108 @@ async function adjustInventory({ barcode, delta }) {
     variantTitle: variant.title,
     sku: variant.sku,
     before: available,
-    after: newAvailable,
-    at: new Date().toISOString()
+    after: available + delta
   };
-
-  return lastScan;
+  lastScan = result;
+  return result;
 }
 
-function page({ message = "", error = "", last = null } = {}) {
-  const missing = requireEnv();
-
-  return `
-<!doctype html>
+function render({ message = "", error = "", last = lastScan } = {}) {
+  const missing = requireSetup();
+  const installed = Boolean(installedAccessToken);
+  return `<!doctype html>
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bernie's Scanner</title>
+  <title>Bernie's Inventory Scanner</title>
   <style>
-    body { margin:0; font-family: Arial, sans-serif; background:#101418; color:#fff; }
-    .wrap { max-width:520px; margin:0 auto; padding:18px; }
-    h1 { font-size:26px; margin:10px 0 4px; }
-    .sub { opacity:.75; margin-bottom:16px; }
-    .card { background:#1b222b; border:1px solid #2e3945; border-radius:16px; padding:16px; margin:14px 0; }
-    input, select { width:100%; box-sizing:border-box; font-size:22px; padding:16px; border-radius:12px; border:1px solid #44515f; background:#0e1318; color:white; margin:8px 0 12px; }
-    button { width:100%; font-size:20px; font-weight:700; padding:16px; border:0; border-radius:12px; cursor:pointer; margin-top:8px; }
-    .minus { background:#ff4d4d; color:white; }
-    .plus { background:#2fc36b; color:#07140b; }
-    .undo { background:#f4c542; color:#171200; }
-    .ok { background:#103d24; border-color:#2fc36b; color:#b9ffd0; }
-    .err { background:#441616; border-color:#ff5e5e; color:#ffd0d0; }
-    .muted { color:#aab4bf; font-size:14px; line-height:1.4; }
-    .big { font-size:22px; font-weight:800; }
-    code { background:#0e1318; padding:2px 5px; border-radius:4px; }
+    body{font-family:Arial,sans-serif;background:#101418;color:white;margin:0}
+    .wrap{max-width:520px;margin:0 auto;padding:18px}
+    .card{background:#1b222b;border:1px solid #334150;border-radius:16px;padding:16px;margin:14px 0}
+    input,select{width:100%;box-sizing:border-box;font-size:22px;padding:16px;border-radius:12px;border:1px solid #44515f;background:#0e1318;color:white;margin:8px 0 12px}
+    button,a.button{display:block;text-align:center;text-decoration:none;width:100%;box-sizing:border-box;font-size:20px;font-weight:700;padding:16px;border:0;border-radius:12px;cursor:pointer;margin-top:8px}
+    .minus{background:#ff4d4d;color:white}.undo{background:#f4c542;color:#171200}.install{background:#4da3ff;color:#06111f}
+    .ok{background:#103d24;border-color:#2fc36b;color:#b9ffd0}.err{background:#441616;border-color:#ff5e5e;color:#ffd0d0}
+    .muted{color:#aab4bf;font-size:14px;line-height:1.4}.big{font-size:22px;font-weight:800} code{background:#0e1318;padding:2px 5px;border-radius:4px}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Bernie's Inventory Scanner</h1>
-    <div class="sub">Minus mode default. No Shopify orders created.</div>
+<div class="wrap">
+  <h1>Bernie's Inventory Scanner</h1>
+  <div class="muted">Minus mode default. No Shopify orders created.</div>
 
-    ${missing.length ? `<div class="card err"><div class="big">Missing Railway variables</div><p>Add these in Railway:</p><p>${missing.map(x => `<code>${x}</code>`).join("<br>")}</p></div>` : ""}
+  ${missing.length ? `<div class="card err"><div class="big">Missing Railway variables</div><p>${missing.map(x=>`<code>${x}</code>`).join("<br>")}</p></div>` : ""}
+  ${!installed ? `<div class="card err"><div class="big">App not authorized yet</div><p>Click this once to install/authorize Shopify.</p><a class="button install" href="/auth">INSTALL / AUTHORIZE SHOPIFY</a></div>` : `<div class="card ok"><div class="big">Shopify authorized</div></div>`}
+  ${message ? `<div class="card ok"><div class="big">${message}</div></div>` : ""}
+  ${error ? `<div class="card err"><div class="big">Error</div><p>${error}</p></div>` : ""}
 
-    ${message ? `<div class="card ok"><div class="big">${message}</div></div>` : ""}
-    ${error ? `<div class="card err"><div class="big">Error</div><p>${error}</p></div>` : ""}
-
-    <div class="card">
-      <form method="POST" action="/scan">
-        <label class="muted">Barcode</label>
-        <input id="barcode" name="barcode" placeholder="Scan or type barcode" autofocus autocomplete="off" inputmode="numeric">
-
-        <label class="muted">Mode</label>
-        <select name="mode">
-          <option value="minus" selected>Minus / Sold item (-1)</option>
-          <option value="plus">Plus / Add back (+1) — PIN required</option>
-        </select>
-
-        <label class="muted">PIN only for Plus mode</label>
-        <input name="pin" placeholder="PIN for plus mode" autocomplete="off">
-
-        <button class="minus" type="submit">SCAN / ADJUST</button>
-      </form>
-    </div>
-
-    ${last ? `
-      <div class="card">
-        <div class="muted">Last adjustment</div>
-        <div class="big">${last.delta > 0 ? "+" : ""}${last.delta} | ${last.productTitle}</div>
-        <p>${last.variantTitle || ""}</p>
-        <p class="muted">SKU: ${last.sku || "n/a"}<br>Barcode: ${last.barcode}<br>Before: ${last.before} → After: ${last.after}</p>
-        <form method="POST" action="/undo">
-          <button class="undo" type="submit">UNDO LAST SCAN</button>
-        </form>
-      </div>
-    ` : ""}
-
-    <div class="card muted">
-      <p><b>Status:</b> ${SHOP_HOST || "missing store"} | Location: ${SHOPIFY_LOCATION_ID || "missing"}</p>
-      <p>Keep this page bookmarked. Scanner should behave like keyboard input.</p>
-    </div>
+  <div class="card">
+    <form method="POST" action="/scan">
+      <label class="muted">Barcode</label>
+      <input id="barcode" name="barcode" placeholder="Scan or type barcode" autofocus autocomplete="off">
+      <label class="muted">Mode</label>
+      <select name="mode">
+        <option value="minus" selected>Minus / Sold item (-1)</option>
+        <option value="plus">Plus / Add back (+1) â€” PIN required</option>
+      </select>
+      <label class="muted">PIN only for Plus mode</label>
+      <input name="pin" placeholder="PIN for plus mode" autocomplete="off">
+      <button class="minus" type="submit">SCAN / ADJUST</button>
+    </form>
   </div>
 
-  <script>
-    const input = document.getElementById('barcode');
-    if (input) input.focus();
-    document.addEventListener('click', () => input && input.focus());
-  </script>
+  ${last ? `<div class="card"><div class="muted">Last adjustment</div><div class="big">${last.delta > 0 ? "+" : ""}${last.delta} | ${last.productTitle}</div><p>${last.variantTitle || ""}</p><p class="muted">SKU: ${last.sku || "n/a"}<br>Barcode: ${last.barcode}<br>Before: ${last.before} â†’ After: ${last.after}</p><form method="POST" action="/undo"><button class="undo" type="submit">UNDO LAST SCAN</button></form></div>` : ""}
+
+  <div class="card muted">
+    <p><b>Shop:</b> ${shopHost() || "missing"}<br><b>Location:</b> ${SHOPIFY_LOCATION_ID}<br><b>App URL:</b> ${APP_URL || "missing"}</p>
+  </div>
+</div>
+<script>
+const input=document.getElementById('barcode'); if(input) input.focus(); document.addEventListener('click',()=>input&&input.focus());
+</script>
 </body>
 </html>`;
 }
 
-app.get("/", (req, res) => {
-  res.send(page({ last: lastScan }));
-});
-
-app.get("/health", (req, res) => {
-  res.json({
-    ok: true,
-    shop: SHOP_HOST,
-    hasClientId: Boolean(SHOPIFY_CLIENT_ID),
-    hasClientSecret: Boolean(SHOPIFY_CLIENT_SECRET),
-    locationId: SHOPIFY_LOCATION_ID || null
-  });
-});
+app.get("/", (req, res) => res.send(render()));
 
 app.post("/scan", async (req, res) => {
   try {
     const barcode = String(req.body.barcode || "").trim();
     const mode = String(req.body.mode || "minus");
     const pin = String(req.body.pin || "");
-
     if (!barcode) throw new Error("No barcode entered.");
 
     const now = Date.now();
-    const lastTime = lastScanAtByBarcode.get(barcode) || 0;
-    if (now - lastTime < 2000) {
-      throw new Error("Duplicate scan blocked. Wait 2 seconds and scan again if intentional.");
-    }
-    lastScanAtByBarcode.set(barcode, now);
+    const lastAt = recent.get(barcode) || 0;
+    if (now - lastAt < 2000) throw new Error("Duplicate scan blocked. Wait 2 seconds and scan again if intentional.");
+    recent.set(barcode, now);
 
     let delta = -1;
-
     if (mode === "plus") {
       if (pin !== APP_PIN) throw new Error("Wrong PIN for plus mode.");
       delta = 1;
     }
 
-    const result = await adjustInventory({ barcode, delta });
-
-    res.send(page({
-      message: `${delta > 0 ? "Added" : "Removed"} 1: ${result.productTitle}`,
-      last: result
-    }));
-  } catch (err) {
-    res.send(page({ error: err.message, last: lastScan }));
+    const r = await adjust(barcode, delta);
+    res.send(render({ message: `${delta > 0 ? "Added" : "Removed"} 1: ${r.productTitle}`, last: r }));
+  } catch (e) {
+    res.send(render({ error: e.message }));
   }
 });
 
 app.post("/undo", async (req, res) => {
   try {
     if (!lastScan) throw new Error("Nothing to undo.");
-
     const undo = lastScan;
     lastScan = null;
-
-    const result = await adjustInventory({
-      barcode: undo.barcode,
-      delta: undo.undoDelta
-    });
-
-    res.send(page({
-      message: `Undo complete: ${result.productTitle}`,
-      last: result
-    }));
-  } catch (err) {
-    res.send(page({ error: err.message, last: lastScan }));
+    const r = await adjust(undo.barcode, undo.undoDelta);
+    res.send(render({ message: `Undo complete: ${r.productTitle}`, last: r }));
+  } catch (e) {
+    res.send(render({ error: e.message }));
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Bernie's scanner running on port ${PORT}`);
-});
+app.get("/health", (req, res) => res.json({ ok:true, installed:Boolean(installedAccessToken), shop:shopHost(), appUrl:APP_URL }));
+
+app.listen(PORT, () => console.log(`Bernie's scanner running on port ${PORT}`));
