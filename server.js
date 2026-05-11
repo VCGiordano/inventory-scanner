@@ -234,7 +234,7 @@ function render({ message = "", error = "", last = lastScan, mode = "remove" } =
 <body>
 <div class="wrap">
   <h1>Bernie's Inventory Scanner</h1>
-  <div class="muted">Pick mode first, then scan. ADD MODE automatically expires and returns to REMOVE MODE.</div>
+  <div class="muted">REMOVE is normal. To receive stock: enter PIN once, tap ADD MODE, then scan. Timer resets after each ADD scan.</div>
 
   ${missing.length ? `<div class="card err"><div class="big">Missing Railway variables</div><p>${missing.map(x=>`<code>${x}</code>`).join("<br>")}</p></div>` : ""}
   ${!installed ? `<div class="card err"><div class="big">App not authorized yet</div><p>Click this once to install/authorize Shopify.</p><a class="button install" href="/auth">INSTALL / AUTHORIZE SHOPIFY</a></div>` : `<div class="card ok"><div class="big">Shopify authorized</div></div>`}
@@ -243,12 +243,13 @@ function render({ message = "", error = "", last = lastScan, mode = "remove" } =
 
   <div class="card" id="modeWarning" style="display:none;">
     <div class="big">ADD MODE ACTIVE</div>
-    <div id="modeTimer" class="muted">Auto-returning to REMOVE MODE soon.</div>
+    <div id="modeTimer" class="muted">Timer running.</div>
   </div>
 
   <div class="card">
     <form id="scanForm" method="POST" action="/scan">
       <input type="hidden" id="actionInput" name="action" value="${mode === "add" ? "add" : "remove"}">
+      <input type="hidden" id="addSessionInput" name="addSession" value="">
 
       <div class="modeLabel">Current Mode: <span id="modeText">${mode === "add" ? "ADD 1" : "REMOVE 1"}</span></div>
       <div class="modeRow">
@@ -259,7 +260,7 @@ function render({ message = "", error = "", last = lastScan, mode = "remove" } =
       <label class="muted">Barcode</label>
       <input id="barcode" name="barcode" placeholder="Scan or type barcode" autofocus autocomplete="off">
 
-      <label class="muted">PIN required only for ADD MODE</label>
+      <label class="muted">PIN required only to enter ADD MODE</label>
       <input id="pin" name="pin" placeholder="PIN for add mode" autocomplete="off">
 
       <button class="submit" type="submit">SUBMIT SCAN</button>
@@ -286,7 +287,9 @@ function render({ message = "", error = "", last = lastScan, mode = "remove" } =
 
 <script>
 const input = document.getElementById('barcode');
+const pin = document.getElementById('pin');
 const actionInput = document.getElementById('actionInput');
+const addSessionInput = document.getElementById('addSessionInput');
 const modeText = document.getElementById('modeText');
 const removeMode = document.getElementById('removeMode');
 const addMode = document.getElementById('addMode');
@@ -297,10 +300,33 @@ const ADD_TIMEOUT_SECONDS = ${ADD_MODE_TIMEOUT_SECONDS};
 let addExpiresAt = 0;
 let timerInterval = null;
 
-function setMode(mode, resetTimer = true) {
+function makeSessionToken() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function saveAddSession(token, expiresAt) {
+  localStorage.setItem('scannerMode', 'add');
+  localStorage.setItem('addSession', token);
+  localStorage.setItem('addExpiresAt', String(expiresAt));
+}
+
+function clearAddSession() {
+  localStorage.setItem('scannerMode', 'remove');
+  localStorage.removeItem('addSession');
+  localStorage.removeItem('addExpiresAt');
+  addSessionInput.value = "";
+}
+
+function setMode(mode, options = {}) {
+  const resetTimer = options.resetTimer !== false;
+  const existingToken = options.token || localStorage.getItem('addSession') || "";
+
   actionInput.value = mode;
 
   if (mode === 'add') {
+    const token = existingToken || makeSessionToken();
+    addSessionInput.value = token;
+
     addMode.classList.add('active');
     removeMode.classList.remove('active');
     modeText.textContent = 'ADD 1';
@@ -308,8 +334,7 @@ function setMode(mode, resetTimer = true) {
 
     if (resetTimer) {
       addExpiresAt = Date.now() + (ADD_TIMEOUT_SECONDS * 1000);
-      localStorage.setItem('scannerMode', 'add');
-      localStorage.setItem('addExpiresAt', String(addExpiresAt));
+      saveAddSession(token, addExpiresAt);
     }
 
     startTimer();
@@ -318,9 +343,8 @@ function setMode(mode, resetTimer = true) {
     addMode.classList.remove('active');
     modeText.textContent = 'REMOVE 1';
     modeWarning.style.display = 'none';
-    localStorage.setItem('scannerMode', 'remove');
-    localStorage.removeItem('addExpiresAt');
-    addExpiresAt = 0;
+    actionInput.value = 'remove';
+    clearAddSession();
 
     if (timerInterval) {
       clearInterval(timerInterval);
@@ -344,22 +368,41 @@ function startTimer() {
       return;
     }
 
-    modeTimer.textContent = 'ADD MODE expires in ' + secondsLeft + ' seconds.';
+    modeTimer.textContent = 'ADD MODE expires in ' + secondsLeft + ' seconds. Each ADD scan resets timer.';
   }, 250);
 }
 
 removeMode.addEventListener('click', () => setMode('remove'));
-addMode.addEventListener('click', () => setMode('add'));
+
+addMode.addEventListener('click', () => {
+  if (pin.value.trim() === "") {
+    alert("Enter PIN first, then tap ADD MODE.");
+    pin.focus();
+    return;
+  }
+  setMode('add');
+  pin.blur();
+});
 
 const savedMode = localStorage.getItem('scannerMode');
 const savedExpires = Number(localStorage.getItem('addExpiresAt') || 0);
+const savedToken = localStorage.getItem('addSession') || "";
 
-if (savedMode === 'add' && savedExpires > Date.now()) {
+if (savedMode === 'add' && savedExpires > Date.now() && savedToken) {
   addExpiresAt = savedExpires;
-  setMode('add', false);
+  setMode('add', { resetTimer: false, token: savedToken });
 } else {
   setMode('remove');
 }
+
+document.getElementById('scanForm').addEventListener('submit', () => {
+  if (actionInput.value === 'add') {
+    const token = addSessionInput.value || localStorage.getItem('addSession') || makeSessionToken();
+    addExpiresAt = Date.now() + (ADD_TIMEOUT_SECONDS * 1000);
+    saveAddSession(token, addExpiresAt);
+    addSessionInput.value = token;
+  }
+});
 
 if(input) input.focus();
 </script>
@@ -374,6 +417,7 @@ app.post("/scan", async (req, res) => {
     const barcode = String(req.body.barcode || "").trim();
     const action = String(req.body.action || "remove");
     const pin = String(req.body.pin || "");
+    const addSession = String(req.body.addSession || "");
     if (!barcode) throw new Error("No barcode entered.");
 
     const now = Date.now();
@@ -385,7 +429,8 @@ app.post("/scan", async (req, res) => {
     let mode = "remove";
 
     if (action === "add") {
-      if (pin !== APP_PIN) throw new Error("Wrong PIN for ADD MODE.");
+      if (!addSession) throw new Error("ADD MODE session missing. Enter PIN and tap ADD MODE again.");
+      if (pin && pin !== APP_PIN) throw new Error("Wrong PIN for ADD MODE.");
       delta = 1;
       mode = "add";
     }
