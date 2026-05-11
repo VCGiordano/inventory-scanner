@@ -1,19 +1,15 @@
+# Bernie's Inventory Scanner v2
 
-# Bernie's Inventory Scanner - OAuth Install Version
+Fixes:
+- Clearer ADD 1 wording
+- Undo now posts barcode + reverse delta in hidden fields
+- Less reliance on server memory for undo
+- Keeps minus/remove as default
 
 Required Railway variables:
+- SHOPIFY_STORE
 - SHOPIFY_CLIENT_ID
 - SHOPIFY_CLIENT_SECRET
-- SHOPIFY_STORE
 - SHOPIFY_LOCATION_ID
 - APP_PIN
 - APP_URL
-
-APP_URL must be your Railway URL, for example:
-https://inventory-scanner-production-a768.up.railway.app
-
-After deploy:
-1. Open Railway URL
-2. Click INSTALL / AUTHORIZE SHOPIFY
-3. Approve Shopify permissions
-4. Return to scanner page
