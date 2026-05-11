@@ -13,6 +13,7 @@ const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
 const SHOPIFY_LOCATION_ID = process.env.SHOPIFY_LOCATION_ID || "";
 const APP_PIN = process.env.APP_PIN || "1234";
 const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
+const ADD_MODE_TIMEOUT_SECONDS = Number(process.env.ADD_MODE_TIMEOUT_SECONDS || 120);
 const SCOPES = "read_products,read_inventory,write_inventory";
 
 let installedAccessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || null;
@@ -197,7 +198,7 @@ function htmlEscape(value) {
     .replace(/"/g, "&quot;");
 }
 
-function render({ message = "", error = "", last = lastScan } = {}) {
+function render({ message = "", error = "", last = lastScan, mode = "remove" } = {}) {
   const missing = requireSetup();
   const installed = Boolean(installedAccessToken);
 
@@ -212,49 +213,56 @@ function render({ message = "", error = "", last = lastScan } = {}) {
     h1{font-size:30px;margin:10px 0 6px}
     .card{background:#1b222b;border:1px solid #334150;border-radius:16px;padding:16px;margin:14px 0}
     input{width:100%;box-sizing:border-box;font-size:24px;padding:18px;border-radius:12px;border:1px solid #44515f;background:#0e1318;color:white;margin:8px 0 12px}
-    button,a.button{display:block;text-align:center;text-decoration:none;width:100%;box-sizing:border-box;font-size:22px;font-weight:800;padding:18px;border:0;border-radius:12px;cursor:pointer;margin-top:10px}
+    button,a.button{display:block;text-align:center;text-decoration:none;width:100%;box-sizing:border-box;font-size:20px;font-weight:800;padding:16px;border:0;border-radius:12px;cursor:pointer;margin-top:10px}
+    .modeRow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+    .modeBtn{opacity:.45;border:2px solid transparent}
+    .modeBtn.active{opacity:1;border-color:white;box-shadow:0 0 0 2px rgba(255,255,255,.25)}
     .remove{background:#ff3b3b;color:white}
     .add{background:#2fc36b;color:#07140b}
-    .scanCam{background:#4da3ff;color:#06111f}
+    .submit{background:#4da3ff;color:#06111f}
     .undo{background:#f4c542;color:#171200}
     .install{background:#4da3ff;color:#06111f}
     .ok{background:#103d24;border-color:#2fc36b;color:#b9ffd0}
     .err{background:#441616;border-color:#ff5e5e;color:#ffd0d0}
+    .warn{background:#4a3510;border-color:#f4c542;color:#ffe7a3}
     .muted{color:#aab4bf;font-size:14px;line-height:1.4}
     .big{font-size:22px;font-weight:800}
+    .modeLabel{font-size:20px;font-weight:800;margin:8px 0}
     code{background:#0e1318;padding:2px 5px;border-radius:4px}
-    .videoBox{display:none;margin-top:12px}
-    video{width:100%;border-radius:12px;border:1px solid #44515f;background:#000}
   </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Bernie's Inventory Scanner</h1>
-  <div class="muted">REMOVE 1 is the normal sale workflow. ADD 1 requires PIN. No Shopify orders created.</div>
+  <div class="muted">Pick mode first, then scan. ADD MODE automatically expires and returns to REMOVE MODE.</div>
 
   ${missing.length ? `<div class="card err"><div class="big">Missing Railway variables</div><p>${missing.map(x=>`<code>${x}</code>`).join("<br>")}</p></div>` : ""}
   ${!installed ? `<div class="card err"><div class="big">App not authorized yet</div><p>Click this once to install/authorize Shopify.</p><a class="button install" href="/auth">INSTALL / AUTHORIZE SHOPIFY</a></div>` : `<div class="card ok"><div class="big">Shopify authorized</div></div>`}
   ${message ? `<div class="card ok"><div class="big">${htmlEscape(message)}</div></div>` : ""}
   ${error ? `<div class="card err"><div class="big">Error</div><p>${htmlEscape(error)}</p></div>` : ""}
 
+  <div class="card" id="modeWarning" style="display:none;">
+    <div class="big">ADD MODE ACTIVE</div>
+    <div id="modeTimer" class="muted">Auto-returning to REMOVE MODE soon.</div>
+  </div>
+
   <div class="card">
-    <form method="POST" action="/scan">
+    <form id="scanForm" method="POST" action="/scan">
+      <input type="hidden" id="actionInput" name="action" value="${mode === "add" ? "add" : "remove"}">
+
+      <div class="modeLabel">Current Mode: <span id="modeText">${mode === "add" ? "ADD 1" : "REMOVE 1"}</span></div>
+      <div class="modeRow">
+        <button class="modeBtn remove ${mode !== "add" ? "active" : ""}" id="removeMode" type="button">REMOVE MODE</button>
+        <button class="modeBtn add ${mode === "add" ? "active" : ""}" id="addMode" type="button">ADD MODE</button>
+      </div>
+
       <label class="muted">Barcode</label>
       <input id="barcode" name="barcode" placeholder="Scan or type barcode" autofocus autocomplete="off">
 
-      <button class="scanCam" id="cameraBtn" type="button">SCAN WITH PHONE CAMERA</button>
+      <label class="muted">PIN required only for ADD MODE</label>
+      <input id="pin" name="pin" placeholder="PIN for add mode" autocomplete="off">
 
-      <div class="videoBox" id="videoBox">
-        <video id="video" playsinline></video>
-        <button class="undo" id="stopCameraBtn" type="button">STOP CAMERA</button>
-        <div class="muted" id="cameraStatus">Point camera at barcode.</div>
-      </div>
-
-      <label class="muted">PIN for ADD 1 only</label>
-      <input name="pin" placeholder="PIN only if adding inventory" autocomplete="off">
-
-      <button class="remove" name="action" value="remove" type="submit">REMOVE 1</button>
-      <button class="add" name="action" value="add" type="submit">ADD 1</button>
+      <button class="submit" type="submit">SUBMIT SCAN</button>
     </form>
   </div>
 
@@ -278,76 +286,82 @@ function render({ message = "", error = "", last = lastScan } = {}) {
 
 <script>
 const input = document.getElementById('barcode');
-const cameraBtn = document.getElementById('cameraBtn');
-const stopCameraBtn = document.getElementById('stopCameraBtn');
-const videoBox = document.getElementById('videoBox');
-const video = document.getElementById('video');
-const cameraStatus = document.getElementById('cameraStatus');
+const actionInput = document.getElementById('actionInput');
+const modeText = document.getElementById('modeText');
+const removeMode = document.getElementById('removeMode');
+const addMode = document.getElementById('addMode');
+const modeWarning = document.getElementById('modeWarning');
+const modeTimer = document.getElementById('modeTimer');
 
-let stream = null;
-let detector = null;
-let scanning = false;
+const ADD_TIMEOUT_SECONDS = ${ADD_MODE_TIMEOUT_SECONDS};
+let addExpiresAt = 0;
+let timerInterval = null;
 
-if (input) input.focus();
+function setMode(mode, resetTimer = true) {
+  actionInput.value = mode;
 
-async function stopCamera() {
-  scanning = false;
-  if (stream) {
-    stream.getTracks().forEach(track => track.stop());
-    stream = null;
+  if (mode === 'add') {
+    addMode.classList.add('active');
+    removeMode.classList.remove('active');
+    modeText.textContent = 'ADD 1';
+    modeWarning.style.display = 'block';
+
+    if (resetTimer) {
+      addExpiresAt = Date.now() + (ADD_TIMEOUT_SECONDS * 1000);
+      localStorage.setItem('scannerMode', 'add');
+      localStorage.setItem('addExpiresAt', String(addExpiresAt));
+    }
+
+    startTimer();
+  } else {
+    removeMode.classList.add('active');
+    addMode.classList.remove('active');
+    modeText.textContent = 'REMOVE 1';
+    modeWarning.style.display = 'none';
+    localStorage.setItem('scannerMode', 'remove');
+    localStorage.removeItem('addExpiresAt');
+    addExpiresAt = 0;
+
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
   }
-  videoBox.style.display = 'none';
+
   if (input) input.focus();
 }
 
-async function scanLoop() {
-  if (!scanning || !detector) return;
-  try {
-    const codes = await detector.detect(video);
-    if (codes && codes.length) {
-      const value = codes[0].rawValue || "";
-      if (value) {
-        input.value = value;
-        cameraStatus.textContent = "Barcode captured: " + value;
-        if (navigator.vibrate) navigator.vibrate(100);
-        await stopCamera();
-        return;
-      }
-    }
-  } catch (e) {
-    cameraStatus.textContent = "Camera scan error. Type barcode manually.";
-  }
-  if (scanning) requestAnimationFrame(scanLoop);
-}
+function startTimer() {
+  if (timerInterval) clearInterval(timerInterval);
 
-cameraBtn.addEventListener('click', async () => {
-  try {
-    if (!('BarcodeDetector' in window)) {
-      alert('Camera barcode scanning is not supported in this browser. Use manual entry or a hardware scanner.');
+  timerInterval = setInterval(() => {
+    if (actionInput.value !== 'add') return;
+
+    const secondsLeft = Math.ceil((addExpiresAt - Date.now()) / 1000);
+
+    if (secondsLeft <= 0) {
+      setMode('remove');
       return;
     }
 
-    detector = new BarcodeDetector({
-      formats: ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code']
-    });
+    modeTimer.textContent = 'ADD MODE expires in ' + secondsLeft + ' seconds.';
+  }, 250);
+}
 
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } },
-      audio: false
-    });
+removeMode.addEventListener('click', () => setMode('remove'));
+addMode.addEventListener('click', () => setMode('add'));
 
-    video.srcObject = stream;
-    await video.play();
-    videoBox.style.display = 'block';
-    cameraStatus.textContent = 'Point camera at barcode.';
-    scanning = true;
-    scanLoop();
-  } catch (e) {
-    alert('Camera could not start. Use manual entry or scanner. ' + e.message);
-  }
-});
+const savedMode = localStorage.getItem('scannerMode');
+const savedExpires = Number(localStorage.getItem('addExpiresAt') || 0);
 
-stopCameraBtn.addEventListener('click', stopCamera);
+if (savedMode === 'add' && savedExpires > Date.now()) {
+  addExpiresAt = savedExpires;
+  setMode('add', false);
+} else {
+  setMode('remove');
+}
+
+if(input) input.focus();
 </script>
 </body>
 </html>`;
@@ -368,15 +382,18 @@ app.post("/scan", async (req, res) => {
     recent.set(`${barcode}:${action}`, now);
 
     let delta = -1;
+    let mode = "remove";
+
     if (action === "add") {
-      if (pin !== APP_PIN) throw new Error("Wrong PIN for ADD 1.");
+      if (pin !== APP_PIN) throw new Error("Wrong PIN for ADD MODE.");
       delta = 1;
+      mode = "add";
     }
 
     const r = await adjust(barcode, delta);
-    res.send(render({ message: `${delta > 0 ? "Added" : "Removed"} 1: ${r.productTitle}`, last: r }));
+    res.send(render({ message: `${delta > 0 ? "Added" : "Removed"} 1: ${r.productTitle}`, last: r, mode }));
   } catch (e) {
-    res.send(render({ error: e.message }));
+    res.send(render({ error: e.message, mode: String(req.body.action || "remove") }));
   }
 });
 
@@ -399,7 +416,8 @@ app.get("/health", (req, res) => res.json({
   installed:Boolean(installedAccessToken),
   shop:shopHost(),
   appUrl:APP_URL,
-  locationId: SHOPIFY_LOCATION_ID
+  locationId: SHOPIFY_LOCATION_ID,
+  addModeTimeoutSeconds: ADD_MODE_TIMEOUT_SECONDS
 }));
 
 app.listen(PORT, () => console.log(`Bernie's scanner running on port ${PORT}`));
