@@ -209,11 +209,13 @@ function render({ message = "", error = "", last = lastScan } = {}) {
   <style>
     body{font-family:Arial,sans-serif;background:#101418;color:white;margin:0}
     .wrap{max-width:560px;margin:0 auto;padding:18px}
-    h1{font-size:32px;margin:10px 0 6px}
+    h1{font-size:30px;margin:10px 0 6px}
     .card{background:#1b222b;border:1px solid #334150;border-radius:16px;padding:16px;margin:14px 0}
-    input,select{width:100%;box-sizing:border-box;font-size:22px;padding:16px;border-radius:12px;border:1px solid #44515f;background:#0e1318;color:white;margin:8px 0 12px}
-    button,a.button{display:block;text-align:center;text-decoration:none;width:100%;box-sizing:border-box;font-size:20px;font-weight:700;padding:16px;border:0;border-radius:12px;cursor:pointer;margin-top:8px}
-    .scan{background:#ff4d4d;color:white}
+    input{width:100%;box-sizing:border-box;font-size:24px;padding:18px;border-radius:12px;border:1px solid #44515f;background:#0e1318;color:white;margin:8px 0 12px}
+    button,a.button{display:block;text-align:center;text-decoration:none;width:100%;box-sizing:border-box;font-size:22px;font-weight:800;padding:18px;border:0;border-radius:12px;cursor:pointer;margin-top:10px}
+    .remove{background:#ff3b3b;color:white}
+    .add{background:#2fc36b;color:#07140b}
+    .scanCam{background:#4da3ff;color:#06111f}
     .undo{background:#f4c542;color:#171200}
     .install{background:#4da3ff;color:#06111f}
     .ok{background:#103d24;border-color:#2fc36b;color:#b9ffd0}
@@ -221,12 +223,14 @@ function render({ message = "", error = "", last = lastScan } = {}) {
     .muted{color:#aab4bf;font-size:14px;line-height:1.4}
     .big{font-size:22px;font-weight:800}
     code{background:#0e1318;padding:2px 5px;border-radius:4px}
+    .videoBox{display:none;margin-top:12px}
+    video{width:100%;border-radius:12px;border:1px solid #44515f;background:#000}
   </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Bernie's Inventory Scanner</h1>
-  <div class="muted">Default is minus/sold item. No Shopify orders created.</div>
+  <div class="muted">REMOVE 1 is the normal sale workflow. ADD 1 requires PIN. No Shopify orders created.</div>
 
   ${missing.length ? `<div class="card err"><div class="big">Missing Railway variables</div><p>${missing.map(x=>`<code>${x}</code>`).join("<br>")}</p></div>` : ""}
   ${!installed ? `<div class="card err"><div class="big">App not authorized yet</div><p>Click this once to install/authorize Shopify.</p><a class="button install" href="/auth">INSTALL / AUTHORIZE SHOPIFY</a></div>` : `<div class="card ok"><div class="big">Shopify authorized</div></div>`}
@@ -238,24 +242,27 @@ function render({ message = "", error = "", last = lastScan } = {}) {
       <label class="muted">Barcode</label>
       <input id="barcode" name="barcode" placeholder="Scan or type barcode" autofocus autocomplete="off">
 
-      <label class="muted">Action</label>
-      <select name="mode">
-        <option value="minus" selected>REMOVE 1 / sold item (-1)</option>
-        <option value="plus">ADD 1 / add back (+1) â€” PIN required</option>
-      </select>
+      <button class="scanCam" id="cameraBtn" type="button">SCAN WITH PHONE CAMERA</button>
 
-      <label class="muted">PIN only needed for ADD 1</label>
-      <input name="pin" placeholder="PIN for add mode" autocomplete="off">
+      <div class="videoBox" id="videoBox">
+        <video id="video" playsinline></video>
+        <button class="undo" id="stopCameraBtn" type="button">STOP CAMERA</button>
+        <div class="muted" id="cameraStatus">Point camera at barcode.</div>
+      </div>
 
-      <button class="scan" type="submit">SCAN / ADJUST</button>
+      <label class="muted">PIN for ADD 1 only</label>
+      <input name="pin" placeholder="PIN only if adding inventory" autocomplete="off">
+
+      <button class="remove" name="action" value="remove" type="submit">REMOVE 1</button>
+      <button class="add" name="action" value="add" type="submit">ADD 1</button>
     </form>
   </div>
 
   ${last ? `<div class="card">
-    <div class="muted">Last adjustment ${last.timestamp ? `â€” ${htmlEscape(last.timestamp)}` : ""}</div>
+    <div class="muted">Last adjustment - ${htmlEscape(last.timestamp || "")}</div>
     <div class="big">${last.delta > 0 ? "ADDED" : "REMOVED"} 1 | ${htmlEscape(last.productTitle)}</div>
     <p>${htmlEscape(last.variantTitle || "")}</p>
-    <p class="muted">SKU: ${htmlEscape(last.sku || "n/a")}<br>Barcode: ${htmlEscape(last.barcode)}<br>Before: ${last.before} â†’ After: ${last.after}</p>
+    <p class="muted">SKU: ${htmlEscape(last.sku || "n/a")}<br>Barcode: ${htmlEscape(last.barcode)}<br>Before: ${last.before}<br>After: ${last.after}</p>
 
     <form method="POST" action="/undo">
       <input type="hidden" name="barcode" value="${htmlEscape(last.barcode)}">
@@ -268,10 +275,79 @@ function render({ message = "", error = "", last = lastScan } = {}) {
     <p><b>Shop:</b> ${htmlEscape(shopHost() || "missing")}<br><b>Location:</b> ${htmlEscape(SHOPIFY_LOCATION_ID || "missing")}<br><b>App URL:</b> ${htmlEscape(APP_URL || "missing")}</p>
   </div>
 </div>
+
 <script>
-const input=document.getElementById('barcode');
-if(input) input.focus();
-document.addEventListener('click',()=>input&&input.focus());
+const input = document.getElementById('barcode');
+const cameraBtn = document.getElementById('cameraBtn');
+const stopCameraBtn = document.getElementById('stopCameraBtn');
+const videoBox = document.getElementById('videoBox');
+const video = document.getElementById('video');
+const cameraStatus = document.getElementById('cameraStatus');
+
+let stream = null;
+let detector = null;
+let scanning = false;
+
+if (input) input.focus();
+
+async function stopCamera() {
+  scanning = false;
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+  }
+  videoBox.style.display = 'none';
+  if (input) input.focus();
+}
+
+async function scanLoop() {
+  if (!scanning || !detector) return;
+  try {
+    const codes = await detector.detect(video);
+    if (codes && codes.length) {
+      const value = codes[0].rawValue || "";
+      if (value) {
+        input.value = value;
+        cameraStatus.textContent = "Barcode captured: " + value;
+        if (navigator.vibrate) navigator.vibrate(100);
+        await stopCamera();
+        return;
+      }
+    }
+  } catch (e) {
+    cameraStatus.textContent = "Camera scan error. Type barcode manually.";
+  }
+  if (scanning) requestAnimationFrame(scanLoop);
+}
+
+cameraBtn.addEventListener('click', async () => {
+  try {
+    if (!('BarcodeDetector' in window)) {
+      alert('Camera barcode scanning is not supported in this browser. Use manual entry or a hardware scanner.');
+      return;
+    }
+
+    detector = new BarcodeDetector({
+      formats: ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code']
+    });
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false
+    });
+
+    video.srcObject = stream;
+    await video.play();
+    videoBox.style.display = 'block';
+    cameraStatus.textContent = 'Point camera at barcode.';
+    scanning = true;
+    scanLoop();
+  } catch (e) {
+    alert('Camera could not start. Use manual entry or scanner. ' + e.message);
+  }
+});
+
+stopCameraBtn.addEventListener('click', stopCamera);
 </script>
 </body>
 </html>`;
@@ -282,18 +358,18 @@ app.get("/", (req, res) => res.send(render()));
 app.post("/scan", async (req, res) => {
   try {
     const barcode = String(req.body.barcode || "").trim();
-    const mode = String(req.body.mode || "minus");
+    const action = String(req.body.action || "remove");
     const pin = String(req.body.pin || "");
     if (!barcode) throw new Error("No barcode entered.");
 
     const now = Date.now();
-    const lastAt = recent.get(barcode) || 0;
+    const lastAt = recent.get(`${barcode}:${action}`) || 0;
     if (now - lastAt < 2000) throw new Error("Duplicate scan blocked. Wait 2 seconds and scan again if intentional.");
-    recent.set(barcode, now);
+    recent.set(`${barcode}:${action}`, now);
 
     let delta = -1;
-    if (mode === "plus") {
-      if (pin !== APP_PIN) throw new Error("Wrong PIN for add mode.");
+    if (action === "add") {
+      if (pin !== APP_PIN) throw new Error("Wrong PIN for ADD 1.");
       delta = 1;
     }
 
