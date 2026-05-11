@@ -1,36 +1,19 @@
 
-# Bernie's Inventory Scanner - Functional MVP
+# Bernie's Inventory Scanner - OAuth Install Version
 
-This is the first functional Railway version.
-
-## Required Railway Variables
-
-Add these in Railway:
-
+Required Railway variables:
 - SHOPIFY_CLIENT_ID
 - SHOPIFY_CLIENT_SECRET
 - SHOPIFY_STORE
 - SHOPIFY_LOCATION_ID
 - APP_PIN
+- APP_URL
 
-Example:
+APP_URL must be your Railway URL, for example:
+https://inventory-scanner-production-a768.up.railway.app
 
-SHOPIFY_STORE=bernies-bait-and-tackle.myshopify.com
-SHOPIFY_LOCATION_ID=123456789
-APP_PIN=1234
-
-## What it does
-
-- Minus mode default: barcode scan subtracts 1 from Shopify inventory
-- Plus mode: requires PIN and adds 1
-- Undo last scan
-- Duplicate scan protection
-- No Shopify orders created
-
-## Important
-
-This version uses the Shopify Dev Dashboard client credentials grant.
-The Shopify app must have scopes:
-- read_products
-- read_inventory
-- write_inventory
+After deploy:
+1. Open Railway URL
+2. Click INSTALL / AUTHORIZE SHOPIFY
+3. Approve Shopify permissions
+4. Return to scanner page

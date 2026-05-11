@@ -1,5 +1,5 @@
 {
-  "name": "bernies-inventory-scanner",
+  "name": "bernies-inventory-scanner-oauth",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
