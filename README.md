@@ -1,12 +1,12 @@
-# Bernie's Inventory Scanner v6
+# Bernie's Inventory Scanner v7
 
-Changes:
-- ADD MODE now automatically times out and returns to REMOVE MODE
-- Default timeout is 120 seconds
-- Optional Railway variable:
-  ADD_MODE_TIMEOUT_SECONDS=120
-- Keeps persistent mode only until timeout expires
-- Designed to prevent accidentally adding inventory all day after receiving stock
+Fixes:
+- PIN is only required to ENTER ADD MODE
+- ADD MODE stays active for receiving inventory
+- Each ADD scan resets the timeout
+- ADD MODE auto-expires back to REMOVE MODE after inactivity
+- REMOVE MODE remains the safe default
+- Removed phone camera scanner
 
 Required Railway variables:
 - SHOPIFY_STORE
