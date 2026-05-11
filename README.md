@@ -1,10 +1,12 @@
-# Bernie's Inventory Scanner v2
+# Bernie's Inventory Scanner v4
 
-Fixes:
-- Clearer ADD 1 wording
-- Undo now posts barcode + reverse delta in hidden fields
-- Less reliance on server memory for undo
-- Keeps minus/remove as default
+Changes:
+- Removed weird arrow/symbol text
+- Removed dropdown
+- Big REMOVE 1 and ADD 1 buttons
+- Adds phone camera scanning button using browser BarcodeDetector when supported
+- Keeps manual entry and hardware scanner support
+- Undo still posts barcode + reverse delta
 
 Required Railway variables:
 - SHOPIFY_STORE
