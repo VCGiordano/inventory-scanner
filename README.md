@@ -1,12 +1,12 @@
-# Bernie's Inventory Scanner v4
+# Bernie's Inventory Scanner v6
 
 Changes:
-- Removed weird arrow/symbol text
-- Removed dropdown
-- Big REMOVE 1 and ADD 1 buttons
-- Adds phone camera scanning button using browser BarcodeDetector when supported
-- Keeps manual entry and hardware scanner support
-- Undo still posts barcode + reverse delta
+- ADD MODE now automatically times out and returns to REMOVE MODE
+- Default timeout is 120 seconds
+- Optional Railway variable:
+  ADD_MODE_TIMEOUT_SECONDS=120
+- Keeps persistent mode only until timeout expires
+- Designed to prevent accidentally adding inventory all day after receiving stock
 
 Required Railway variables:
 - SHOPIFY_STORE
@@ -15,3 +15,6 @@ Required Railway variables:
 - SHOPIFY_LOCATION_ID
 - APP_PIN
 - APP_URL
+
+Optional Railway variable:
+- ADD_MODE_TIMEOUT_SECONDS
