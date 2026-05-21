@@ -1,12 +1,16 @@
-# Bernie's Inventory Scanner v7
+# Bernie's Inventory Scanner v8 Stable Candidate
 
-Fixes:
-- PIN is only required to ENTER ADD MODE
-- ADD MODE stays active for receiving inventory
-- Each ADD scan resets the timeout
-- ADD MODE auto-expires back to REMOVE MODE after inactivity
-- REMOVE MODE remains the safe default
-- Removed phone camera scanner
+Production hardening pass:
+- One-screen C66 layout
+- Big READY / ADD MODE status bar
+- Aggressive barcode focus lock
+- Auto-clear barcode field on load
+- ADD MODE PIN only to enter mode
+- ADD MODE timeout resets after add scan
+- Duplicate scan window reduced to 500ms default
+- Big success/error feedback
+- Debug clutter removed
+- Undo retained
 
 Required Railway variables:
 - SHOPIFY_STORE
@@ -16,5 +20,6 @@ Required Railway variables:
 - APP_PIN
 - APP_URL
 
-Optional Railway variable:
+Optional Railway variables:
 - ADD_MODE_TIMEOUT_SECONDS
+- DUPLICATE_SCAN_MS
