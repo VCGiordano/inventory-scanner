@@ -1,12 +1,15 @@
-# Bernie's Inventory Scanner v10 Auto Submit
+# Bernie's Inventory Scanner v12 C66 Simple Focus
 
 Changes:
-- Keeps GO button removed
-- Adds auto-submit after barcode input settles
-- Default auto-submit delay: 250ms
-- Works when C66 scanner types barcode but does not send Enter
-- Also catches Enter if scanner does send Enter
-- Keeps one-screen layout, focus lock, ADD mode session, timeout, undo
+- Simplifies from v11
+- Standard editable barcode input
+- Removes aggressive global key interception
+- Hard refocuses barcode field after mode changes, page load, visibility change, and taps
+- No GO button
+- Submit on scanner Enter
+- Fallback auto-submit after barcode input appears
+- Default auto-submit delay: 100ms
+- Keeps one-screen layout, ADD mode session, timeout, duplicate protection, undo
 
 Required Railway variables:
 - SHOPIFY_STORE
