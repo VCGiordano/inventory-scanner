@@ -15,7 +15,7 @@ const APP_PIN = process.env.APP_PIN || "1234";
 const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
 const ADD_MODE_TIMEOUT_SECONDS = Number(process.env.ADD_MODE_TIMEOUT_SECONDS || 120);
 const DUPLICATE_SCAN_MS = Number(process.env.DUPLICATE_SCAN_MS || 500);
-const AUTO_SUBMIT_DELAY_MS = Number(process.env.AUTO_SUBMIT_DELAY_MS || 250);
+const AUTO_SUBMIT_DELAY_MS = Number(process.env.AUTO_SUBMIT_DELAY_MS || 100);
 const SCOPES = "read_products,read_inventory,write_inventory";
 
 let installedAccessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || null;
@@ -188,6 +188,7 @@ body{font-family:Arial,sans-serif;background:#0b1015;color:white;overflow:hidden
 .screen{height:100vh;display:flex;flex-direction:column;padding:8px;gap:6px}
 .top{border-radius:14px;padding:8px 10px;text-align:center;font-weight:900;letter-spacing:.5px;font-size:22px;line-height:1.1;background:#104225;border:2px solid #2fc36b;color:#caffd8}
 .top.addActive{background:#4a3510;border-color:#f4c542;color:#ffe7a3}
+.top.processing{background:#17314a;border-color:#4da3ff;color:#d7ecff}
 .modeRow{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 button,a.button{display:block;text-align:center;text-decoration:none;width:100%;border:0;border-radius:12px;font-weight:900;cursor:pointer;padding:12px 8px;font-size:18px;line-height:1}
 .modeBtn{opacity:.42;border:2px solid transparent}.modeBtn.active{opacity:1;border:2px solid white;box-shadow:0 0 0 2px rgba(255,255,255,.22)}
@@ -207,7 +208,7 @@ code{background:#05080b;padding:2px 4px;border-radius:4px}
 </style>
 </head>
 <body>
-<div class="screen">
+<div class="screen" id="screen">
   <div id="statusBar" class="top">READY TO SCAN</div>
   ${missing.length ? `<div class="installBox"><b>Missing setup:</b><br>${missing.map(x=>`<code>${x}</code>`).join(" ")}</div>` : ""}
   ${!installed ? `<div class="installBox"><b>Shopify not authorized</b><br><a class="button authorize" href="/auth">AUTHORIZE SHOPIFY</a></div>` : ""}
@@ -221,7 +222,7 @@ code{background:#05080b;padding:2px 4px;border-radius:4px}
     </div>
     <div class="scanBox">
       <label>Barcode</label>
-      <input id="barcode" name="barcode" placeholder="Scan barcode" autofocus autocomplete="off" inputmode="none">
+      <input id="barcode" name="barcode" placeholder="Scan barcode" autofocus autocomplete="off">
       <div class="pinBox">
         <label>PIN for ADD only</label>
         <input id="pin" name="pin" placeholder="PIN" autocomplete="off" inputmode="numeric">
@@ -232,7 +233,7 @@ code{background:#05080b;padding:2px 4px;border-radius:4px}
   <div class="${resultClass}">
     <div class="resultMain">${htmlEscape(resultText)}</div>
     ${error ? `<div class="errorText">${htmlEscape(error)}</div>` : ""}
-    ${last ? `<div class="product">${htmlEscape(last.productTitle)}</div><div class="meta">SKU: ${htmlEscape(last.sku || "n/a")}<br>${last.before} to ${last.after} | ${htmlEscape(last.timestamp || "")}</div>` : `<div class="meta">Scan barcode. App auto-submits when barcode appears.</div>`}
+    ${last ? `<div class="product">${htmlEscape(last.productTitle)}</div><div class="meta">SKU: ${htmlEscape(last.sku || "n/a")}<br>${last.before} to ${last.after} | ${htmlEscape(last.timestamp || "")}</div>` : `<div class="meta">Scan barcode. Field is forced ready after taps and mode changes.</div>`}
   </div>
 
   <div class="bottomRow">
@@ -242,33 +243,79 @@ code{background:#05080b;padding:2px 4px;border-radius:4px}
 </div>
 
 <script>
-const input=document.getElementById('barcode'), pin=document.getElementById('pin'), actionInput=document.getElementById('actionInput'), addSessionInput=document.getElementById('addSessionInput'), statusBar=document.getElementById('statusBar'), removeMode=document.getElementById('removeMode'), addMode=document.getElementById('addMode'), clearBtn=document.getElementById('clearBtn'), scanForm=document.getElementById('scanForm');
+const input=document.getElementById('barcode');
+const pin=document.getElementById('pin');
+const actionInput=document.getElementById('actionInput');
+const addSessionInput=document.getElementById('addSessionInput');
+const statusBar=document.getElementById('statusBar');
+const removeMode=document.getElementById('removeMode');
+const addMode=document.getElementById('addMode');
+const clearBtn=document.getElementById('clearBtn');
+const scanForm=document.getElementById('scanForm');
+
 const ADD_TIMEOUT_SECONDS=${ADD_MODE_TIMEOUT_SECONDS};
 const AUTO_SUBMIT_DELAY_MS=${AUTO_SUBMIT_DELAY_MS};
-let addExpiresAt=0, timerInterval=null, submitTimer=null, isSubmitting=false;
+
+let addExpiresAt=0;
+let timerInterval=null;
+let submitTimer=null;
+let isSubmitting=false;
 
 function makeSessionToken(){return Math.random().toString(36).slice(2)+Date.now().toString(36)}
 function saveAddSession(token,expiresAt){localStorage.setItem('scannerMode','add');localStorage.setItem('addSession',token);localStorage.setItem('addExpiresAt',String(expiresAt))}
 function clearAddSession(){localStorage.setItem('scannerMode','remove');localStorage.removeItem('addSession');localStorage.removeItem('addExpiresAt');addSessionInput.value=''}
 function updateStatus(text,modeClass){statusBar.className='top'+(modeClass?' '+modeClass:'');statusBar.textContent=text}
-function focusBarcode(){if(input && document.activeElement!==pin){input.focus()}}
+
+function forceFocus() {
+  if (!input || isSubmitting) return;
+  if (document.activeElement !== pin) {
+    input.focus();
+    try { input.setSelectionRange(input.value.length, input.value.length); } catch(e) {}
+  }
+}
 
 function setMode(mode,options={}){
   const resetTimer=options.resetTimer!==false;
   const existingToken=options.token || localStorage.getItem('addSession') || '';
   actionInput.value=mode;
+
   if(mode==='add'){
     const typedPin=pin.value.trim();
-    if(!existingToken && typedPin===''){alert('Enter PIN first, then tap ADD.');pin.focus();return}
+    if(!existingToken && typedPin===''){
+      alert('Enter PIN first, then tap ADD.');
+      pin.focus();
+      return;
+    }
     const token=existingToken || makeSessionToken();
     addSessionInput.value=token;
-    addMode.classList.add('active');removeMode.classList.remove('active');
-    if(resetTimer){addExpiresAt=Date.now()+(ADD_TIMEOUT_SECONDS*1000);saveAddSession(token,addExpiresAt)}
-    pin.blur();focusBarcode();startTimer();
+    addMode.classList.add('active');
+    removeMode.classList.remove('active');
+
+    if(resetTimer){
+      addExpiresAt=Date.now()+(ADD_TIMEOUT_SECONDS*1000);
+      saveAddSession(token,addExpiresAt);
+    }
+
+    pin.blur();
+    forceFocus();
+    setTimeout(forceFocus,50);
+    setTimeout(forceFocus,200);
+    startTimer();
   } else {
-    removeMode.classList.add('active');addMode.classList.remove('active');actionInput.value='remove';clearAddSession();
-    if(timerInterval){clearInterval(timerInterval);timerInterval=null}
-    updateStatus('READY TO SCAN','');focusBarcode();
+    removeMode.classList.add('active');
+    addMode.classList.remove('active');
+    actionInput.value='remove';
+    clearAddSession();
+
+    if(timerInterval){
+      clearInterval(timerInterval);
+      timerInterval=null;
+    }
+
+    updateStatus('READY TO SCAN','');
+    forceFocus();
+    setTimeout(forceFocus,50);
+    setTimeout(forceFocus,200);
   }
 }
 
@@ -277,7 +324,10 @@ function startTimer(){
   timerInterval=setInterval(()=>{
     if(actionInput.value!=='add') return;
     const secondsLeft=Math.ceil((addExpiresAt-Date.now())/1000);
-    if(secondsLeft<=0){setMode('remove');return}
+    if(secondsLeft<=0){
+      setMode('remove');
+      return;
+    }
     updateStatus('ADD MODE - '+secondsLeft+'s','addActive');
   },200);
 }
@@ -291,31 +341,48 @@ function prepareAddSessionIfNeeded(){
   }
 }
 
+function doSubmit(){
+  if(isSubmitting) return;
+  const barcode=(input.value || '').trim();
+  if(barcode.length < 3) return;
+
+  isSubmitting=true;
+  updateStatus('PROCESSING...', 'processing');
+  prepareAddSessionIfNeeded();
+
+  // Use native submit to avoid button/click issues.
+  scanForm.submit();
+}
+
 function autoSubmitSoon(){
   if(isSubmitting) return;
   const value=(input.value || '').trim();
   if(value.length < 3) return;
+
   if(submitTimer) clearTimeout(submitTimer);
-  submitTimer=setTimeout(()=>{
-    const barcode=(input.value || '').trim();
-    if(barcode.length < 3 || isSubmitting) return;
-    isSubmitting=true;
-    updateStatus('PROCESSING...', actionInput.value==='add' ? 'addActive' : '');
-    prepareAddSessionIfNeeded();
-    scanForm.requestSubmit ? scanForm.requestSubmit() : scanForm.submit();
-  }, AUTO_SUBMIT_DELAY_MS);
+  submitTimer=setTimeout(doSubmit, AUTO_SUBMIT_DELAY_MS);
 }
 
-removeMode.addEventListener('click',()=>setMode('remove'));
-addMode.addEventListener('click',()=>setMode('add'));
-clearBtn.addEventListener('click',()=>{input.value='';focusBarcode()});
+removeMode.addEventListener('click',()=>{
+  setMode('remove');
+});
+
+addMode.addEventListener('click',()=>{
+  setMode('add');
+});
+
+clearBtn.addEventListener('click',()=>{
+  input.value='';
+  forceFocus();
+  setTimeout(forceFocus,50);
+});
 
 input.addEventListener('input', autoSubmitSoon);
 input.addEventListener('change', autoSubmitSoon);
 input.addEventListener('keydown',(e)=>{
   if(e.key === 'Enter'){
     e.preventDefault();
-    autoSubmitSoon();
+    doSubmit();
   }
 });
 
@@ -327,12 +394,34 @@ scanForm.addEventListener('submit',()=>{
 const savedMode=localStorage.getItem('scannerMode');
 const savedExpires=Number(localStorage.getItem('addExpiresAt') || 0);
 const savedToken=localStorage.getItem('addSession') || '';
-if(savedMode==='add' && savedExpires>Date.now() && savedToken){addExpiresAt=savedExpires;setMode('add',{resetTimer:false,token:savedToken})} else {setMode('remove')}
 
-window.addEventListener('load',()=>{if(input)input.value='';focusBarcode()});
-document.addEventListener('click',(e)=>{const tag=e.target.tagName.toLowerCase(); if(tag!=='input' && tag!=='button' && tag!=='a') focusBarcode()});
-setInterval(()=>{if(document.activeElement!==pin) focusBarcode()},700);
-if(input) focusBarcode();
+if(savedMode==='add' && savedExpires>Date.now() && savedToken){
+  addExpiresAt=savedExpires;
+  setMode('add',{resetTimer:false,token:savedToken});
+} else {
+  setMode('remove');
+}
+
+window.addEventListener('load',()=>{
+  input.value='';
+  forceFocus();
+  setTimeout(forceFocus,100);
+  setTimeout(forceFocus,400);
+});
+
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden) setTimeout(forceFocus,100);
+});
+
+document.addEventListener('click',(e)=>{
+  const tag=e.target.tagName.toLowerCase();
+  if(tag !== 'input' && tag !== 'button' && tag !== 'a'){
+    forceFocus();
+  }
+});
+
+setInterval(forceFocus,500);
+forceFocus();
 </script>
 </body>
 </html>`;
@@ -353,7 +442,9 @@ app.post("/scan", async (req, res) => {
     if (now - lastAt < DUPLICATE_SCAN_MS) throw new Error("Duplicate scan blocked. Scan again if intentional.");
     recent.set(`${barcode}:${action}`, now);
 
-    let delta = -1, mode = "remove";
+    let delta = -1;
+    let mode = "remove";
+
     if (action === "add") {
       if (!addSession) throw new Error("ADD MODE session missing. Enter PIN and tap ADD again.");
       if (pin && pin !== APP_PIN) throw new Error("Wrong PIN for ADD MODE.");
@@ -381,8 +472,14 @@ app.post("/undo", async (req, res) => {
 });
 
 app.get("/health", (req, res) => res.json({
-  ok:true, installed:Boolean(installedAccessToken), shop:shopHost(), appUrl:APP_URL,
-  locationId: SHOPIFY_LOCATION_ID, addModeTimeoutSeconds: ADD_MODE_TIMEOUT_SECONDS, duplicateScanMs: DUPLICATE_SCAN_MS, autoSubmitDelayMs: AUTO_SUBMIT_DELAY_MS
+  ok:true,
+  installed:Boolean(installedAccessToken),
+  shop:shopHost(),
+  appUrl:APP_URL,
+  locationId: SHOPIFY_LOCATION_ID,
+  addModeTimeoutSeconds: ADD_MODE_TIMEOUT_SECONDS,
+  duplicateScanMs: DUPLICATE_SCAN_MS,
+  autoSubmitDelayMs: AUTO_SUBMIT_DELAY_MS
 }));
 
 app.listen(PORT, () => console.log(`Bernie's scanner running on port ${PORT}`));
