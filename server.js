@@ -15,6 +15,7 @@ const APP_PIN = process.env.APP_PIN || "1234";
 const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
 const ADD_MODE_TIMEOUT_SECONDS = Number(process.env.ADD_MODE_TIMEOUT_SECONDS || 120);
 const DUPLICATE_SCAN_MS = Number(process.env.DUPLICATE_SCAN_MS || 500);
+const AUTO_SUBMIT_DELAY_MS = Number(process.env.AUTO_SUBMIT_DELAY_MS || 250);
 const SCOPES = "read_products,read_inventory,write_inventory";
 
 let installedAccessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || null;
@@ -220,10 +221,10 @@ code{background:#05080b;padding:2px 4px;border-radius:4px}
     </div>
     <div class="scanBox">
       <label>Barcode</label>
-      <input id="barcode" name="barcode" placeholder="Scan barcode" autofocus autocomplete="off">
+      <input id="barcode" name="barcode" placeholder="Scan barcode" autofocus autocomplete="off" inputmode="none">
       <div class="pinBox">
         <label>PIN for ADD only</label>
-        <input id="pin" name="pin" placeholder="PIN" autocomplete="off">
+        <input id="pin" name="pin" placeholder="PIN" autocomplete="off" inputmode="numeric">
       </div>
     </div>
   </form>
@@ -231,7 +232,7 @@ code{background:#05080b;padding:2px 4px;border-radius:4px}
   <div class="${resultClass}">
     <div class="resultMain">${htmlEscape(resultText)}</div>
     ${error ? `<div class="errorText">${htmlEscape(error)}</div>` : ""}
-    ${last ? `<div class="product">${htmlEscape(last.productTitle)}</div><div class="meta">SKU: ${htmlEscape(last.sku || "n/a")}<br>${last.before} to ${last.after} | ${htmlEscape(last.timestamp || "")}</div>` : `<div class="meta">Scan barcode. Hardware scanner Enter submits automatically.</div>`}
+    ${last ? `<div class="product">${htmlEscape(last.productTitle)}</div><div class="meta">SKU: ${htmlEscape(last.sku || "n/a")}<br>${last.before} to ${last.after} | ${htmlEscape(last.timestamp || "")}</div>` : `<div class="meta">Scan barcode. App auto-submits when barcode appears.</div>`}
   </div>
 
   <div class="bottomRow">
@@ -243,7 +244,8 @@ code{background:#05080b;padding:2px 4px;border-radius:4px}
 <script>
 const input=document.getElementById('barcode'), pin=document.getElementById('pin'), actionInput=document.getElementById('actionInput'), addSessionInput=document.getElementById('addSessionInput'), statusBar=document.getElementById('statusBar'), removeMode=document.getElementById('removeMode'), addMode=document.getElementById('addMode'), clearBtn=document.getElementById('clearBtn'), scanForm=document.getElementById('scanForm');
 const ADD_TIMEOUT_SECONDS=${ADD_MODE_TIMEOUT_SECONDS};
-let addExpiresAt=0, timerInterval=null;
+const AUTO_SUBMIT_DELAY_MS=${AUTO_SUBMIT_DELAY_MS};
+let addExpiresAt=0, timerInterval=null, submitTimer=null, isSubmitting=false;
 
 function makeSessionToken(){return Math.random().toString(36).slice(2)+Date.now().toString(36)}
 function saveAddSession(token,expiresAt){localStorage.setItem('scannerMode','add');localStorage.setItem('addSession',token);localStorage.setItem('addExpiresAt',String(expiresAt))}
@@ -280,17 +282,46 @@ function startTimer(){
   },200);
 }
 
-removeMode.addEventListener('click',()=>setMode('remove'));
-addMode.addEventListener('click',()=>setMode('add'));
-clearBtn.addEventListener('click',()=>{input.value='';focusBarcode()});
-
-scanForm.addEventListener('submit',()=>{
+function prepareAddSessionIfNeeded(){
   if(actionInput.value==='add'){
     const token=addSessionInput.value || localStorage.getItem('addSession') || makeSessionToken();
     addExpiresAt=Date.now()+(ADD_TIMEOUT_SECONDS*1000);
     saveAddSession(token,addExpiresAt);
     addSessionInput.value=token;
   }
+}
+
+function autoSubmitSoon(){
+  if(isSubmitting) return;
+  const value=(input.value || '').trim();
+  if(value.length < 3) return;
+  if(submitTimer) clearTimeout(submitTimer);
+  submitTimer=setTimeout(()=>{
+    const barcode=(input.value || '').trim();
+    if(barcode.length < 3 || isSubmitting) return;
+    isSubmitting=true;
+    updateStatus('PROCESSING...', actionInput.value==='add' ? 'addActive' : '');
+    prepareAddSessionIfNeeded();
+    scanForm.requestSubmit ? scanForm.requestSubmit() : scanForm.submit();
+  }, AUTO_SUBMIT_DELAY_MS);
+}
+
+removeMode.addEventListener('click',()=>setMode('remove'));
+addMode.addEventListener('click',()=>setMode('add'));
+clearBtn.addEventListener('click',()=>{input.value='';focusBarcode()});
+
+input.addEventListener('input', autoSubmitSoon);
+input.addEventListener('change', autoSubmitSoon);
+input.addEventListener('keydown',(e)=>{
+  if(e.key === 'Enter'){
+    e.preventDefault();
+    autoSubmitSoon();
+  }
+});
+
+scanForm.addEventListener('submit',()=>{
+  isSubmitting=true;
+  prepareAddSessionIfNeeded();
 });
 
 const savedMode=localStorage.getItem('scannerMode');
@@ -351,7 +382,7 @@ app.post("/undo", async (req, res) => {
 
 app.get("/health", (req, res) => res.json({
   ok:true, installed:Boolean(installedAccessToken), shop:shopHost(), appUrl:APP_URL,
-  locationId: SHOPIFY_LOCATION_ID, addModeTimeoutSeconds: ADD_MODE_TIMEOUT_SECONDS, duplicateScanMs: DUPLICATE_SCAN_MS
+  locationId: SHOPIFY_LOCATION_ID, addModeTimeoutSeconds: ADD_MODE_TIMEOUT_SECONDS, duplicateScanMs: DUPLICATE_SCAN_MS, autoSubmitDelayMs: AUTO_SUBMIT_DELAY_MS
 }));
 
 app.listen(PORT, () => console.log(`Bernie's scanner running on port ${PORT}`));
