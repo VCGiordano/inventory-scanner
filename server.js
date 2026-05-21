@@ -3,7 +3,7 @@ const crypto = require("crypto");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-04";
+const API_VERSION = process.env.SHOPIFY_API_VERSION || "2025-01";
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -24,7 +24,9 @@ let recent = new Map();
 
 function shopHost() {
   if (!SHOPIFY_STORE) return "";
-  return SHOPIFY_STORE.endsWith(".myshopify.com") ? SHOPIFY_STORE : `${SHOPIFY_STORE}.myshopify.com`;
+  return SHOPIFY_STORE.endsWith(".myshopify.com")
+    ? SHOPIFY_STORE
+    : `${SHOPIFY_STORE}.myshopify.com`;
 }
 
 function locationGid() {
@@ -156,7 +158,7 @@ async function adjust(barcode, delta) {
   }
 
   const mutation = `
-    mutation AdjustInventory($input: InventoryAdjustQuantitiesInput!) {
+    mutation inventoryAdjustQuantities($input: InventoryAdjustQuantitiesInput!) {
       inventoryAdjustQuantities(input: $input) {
         userErrors {
           field
@@ -176,7 +178,6 @@ async function adjust(barcode, delta) {
     changes: [
       {
         delta,
-        changeFromQuantity: available,
         inventoryItemId: variant.inventoryItem.id,
         locationId: locationGid(),
       },
