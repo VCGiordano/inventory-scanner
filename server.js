@@ -24,9 +24,7 @@ let recent = new Map();
 
 function shopHost() {
   if (!SHOPIFY_STORE) return "";
-  return SHOPIFY_STORE.endsWith(".myshopify.com")
-    ? SHOPIFY_STORE
-    : `${SHOPIFY_STORE}.myshopify.com`;
+  return SHOPIFY_STORE.endsWith(".myshopify.com") ? SHOPIFY_STORE : `${SHOPIFY_STORE}.myshopify.com`;
 }
 
 function locationGid() {
@@ -467,14 +465,23 @@ window.addEventListener("load", () => {
   focusBarcode();
 });
 
+// Important: do NOT focus barcode when tapping blank space.
+// This prevents the keyboard from popping up constantly.
 document.addEventListener("click", (e) => {
   const tag = e.target.tagName.toLowerCase();
-  if (tag !== "input" && tag !== "button" && tag !== "a") focusBarcode();
-});
 
-setInterval(() => {
-  if (document.activeElement !== pin) focusBarcode();
-}, 700);
+  if (tag !== "input" && tag !== "button" && tag !== "a") {
+    return;
+  }
+
+  if (tag === "button") {
+    return;
+  }
+
+  if (document.activeElement !== pin) {
+    focusBarcode();
+  }
+});
 
 focusBarcode();
 </script>
