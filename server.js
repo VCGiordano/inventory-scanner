@@ -355,3 +355,8 @@ app.get("/health", (req, res) => res.json({
   ok:true, installed:Boolean(installedAccessToken), shop:shopHost(), appUrl:APP_URL,
   locationId: SHOPIFY_LOCATION_ID, addModeTimeoutSeconds: ADD_MODE_TIMEOUT_SECONDS, duplicateScanMs: DUPLICATE_SCAN_MS
 }));
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Inventory scanner running on port ${PORT}`);
+});
