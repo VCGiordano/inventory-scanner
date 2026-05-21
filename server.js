@@ -14,6 +14,7 @@ const SHOPIFY_LOCATION_ID = process.env.SHOPIFY_LOCATION_ID || "";
 const APP_PIN = process.env.APP_PIN || "1234";
 const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
 const ADD_MODE_TIMEOUT_SECONDS = Number(process.env.ADD_MODE_TIMEOUT_SECONDS || 120);
+const DUPLICATE_SCAN_MS = Number(process.env.DUPLICATE_SCAN_MS || 500);
 const SCOPES = "read_products,read_inventory,write_inventory";
 
 let installedAccessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || null;
@@ -42,16 +43,13 @@ function requireSetup() {
 }
 
 function installUrl() {
-  const shop = shopHost();
-  const state = crypto.randomBytes(16).toString("hex");
-  const redirectUri = `${APP_URL}/auth/callback`;
   const params = new URLSearchParams({
     client_id: SHOPIFY_CLIENT_ID || "",
     scope: SCOPES,
-    redirect_uri: redirectUri,
-    state
+    redirect_uri: `${APP_URL}/auth/callback`,
+    state: crypto.randomBytes(16).toString("hex")
   });
-  return `https://${shop}/admin/oauth/authorize?${params.toString()}`;
+  return `https://${shopHost()}/admin/oauth/authorize?${params.toString()}`;
 }
 
 app.get("/auth", (req, res) => {
@@ -64,22 +62,14 @@ app.get("/auth/callback", async (req, res) => {
   try {
     const { code, shop } = req.query;
     if (!code) throw new Error("Missing authorization code from Shopify.");
-
     const response = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_id: SHOPIFY_CLIENT_ID,
-        client_secret: SHOPIFY_CLIENT_SECRET,
-        code
-      })
+      body: JSON.stringify({ client_id: SHOPIFY_CLIENT_ID, client_secret: SHOPIFY_CLIENT_SECRET, code })
     });
-
     const text = await response.text();
     if (!response.ok) throw new Error(`Token exchange failed ${response.status}: ${text}`);
-
-    const data = JSON.parse(text);
-    installedAccessToken = data.access_token;
+    installedAccessToken = JSON.parse(text).access_token;
     res.redirect("/");
   } catch (e) {
     res.send(render({ error: e.message }));
@@ -87,14 +77,11 @@ app.get("/auth/callback", async (req, res) => {
 });
 
 async function gql(query, variables = {}) {
-  if (!installedAccessToken) throw new Error("App is not authorized yet. Click INSTALL / AUTHORIZE SHOPIFY first.");
+  if (!installedAccessToken) throw new Error("App is not authorized yet. Tap AUTHORIZE SHOPIFY once.");
 
   const response = await fetch(`https://${shopHost()}/admin/api/2025-10/graphql.json`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": installedAccessToken
-    },
+    headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": installedAccessToken },
     body: JSON.stringify({ query, variables })
   });
 
@@ -114,14 +101,10 @@ async function findVariant(barcode) {
       productVariants(first: 5, query: $q) {
         edges {
           node {
-            id
-            title
-            sku
-            barcode
+            id title sku barcode
             product { title vendor }
             inventoryItem {
-              id
-              tracked
+              id tracked
               inventoryLevel(locationId: $locationId) {
                 quantities(names: ["available"]) { name quantity }
               }
@@ -134,7 +117,6 @@ async function findVariant(barcode) {
 
   const data = await gql(query, { q: `barcode:${esc(barcode)}`, locationId: locationGid() });
   const variants = data.productVariants.edges.map(e => e.node);
-
   if (!variants.length) throw new Error(`No product found for barcode: ${barcode}`);
   if (variants.length > 1) throw new Error(`Duplicate barcode found on ${variants.length} variants.`);
 
@@ -142,7 +124,6 @@ async function findVariant(barcode) {
   if (!v.inventoryItem.tracked) throw new Error("Product found, but inventory is not tracked.");
   const available = v.inventoryItem.inventoryLevel?.quantities?.[0]?.quantity;
   if (available === undefined || available === null) throw new Error("No inventory level found at this location.");
-
   return { variant: v, available };
 }
 
@@ -163,11 +144,7 @@ async function adjust(barcode, delta) {
     reason: "correction",
     name: "available",
     referenceDocumentUri: `bernies-scanner://${Date.now()}-${crypto.randomUUID()}`,
-    changes: [{
-      delta,
-      inventoryItemId: variant.inventoryItem.id,
-      locationId: locationGid()
-    }]
+    changes: [{ delta, inventoryItemId: variant.inventoryItem.id, locationId: locationGid() }]
   };
 
   const data = await gql(mutation, { input });
@@ -183,228 +160,150 @@ async function adjust(barcode, delta) {
     sku: variant.sku,
     before: available,
     after: available + delta,
-    timestamp: new Date().toLocaleString()
+    timestamp: new Date().toLocaleTimeString()
   };
-
   lastScan = result;
   return result;
 }
 
 function htmlEscape(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function render({ message = "", error = "", last = lastScan, mode = "remove" } = {}) {
   const missing = requireSetup();
   const installed = Boolean(installedAccessToken);
+  const resultClass = error ? "result errorResult" : (message ? "result okResult" : "result neutralResult");
+  const resultText = error ? "ERROR" : (last ? (last.delta > 0 ? "ADDED 1" : "REMOVED 1") : "READY");
 
   return `<!doctype html>
 <html>
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bernie's Inventory Scanner</title>
-  <style>
-    body{font-family:Arial,sans-serif;background:#101418;color:white;margin:0}
-    .wrap{max-width:560px;margin:0 auto;padding:18px}
-    h1{font-size:30px;margin:10px 0 6px}
-    .card{background:#1b222b;border:1px solid #334150;border-radius:16px;padding:16px;margin:14px 0}
-    input{width:100%;box-sizing:border-box;font-size:24px;padding:18px;border-radius:12px;border:1px solid #44515f;background:#0e1318;color:white;margin:8px 0 12px}
-    button,a.button{display:block;text-align:center;text-decoration:none;width:100%;box-sizing:border-box;font-size:20px;font-weight:800;padding:16px;border:0;border-radius:12px;cursor:pointer;margin-top:10px}
-    .modeRow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
-    .modeBtn{opacity:.45;border:2px solid transparent}
-    .modeBtn.active{opacity:1;border-color:white;box-shadow:0 0 0 2px rgba(255,255,255,.25)}
-    .remove{background:#ff3b3b;color:white}
-    .add{background:#2fc36b;color:#07140b}
-    .submit{background:#4da3ff;color:#06111f}
-    .undo{background:#f4c542;color:#171200}
-    .install{background:#4da3ff;color:#06111f}
-    .ok{background:#103d24;border-color:#2fc36b;color:#b9ffd0}
-    .err{background:#441616;border-color:#ff5e5e;color:#ffd0d0}
-    .warn{background:#4a3510;border-color:#f4c542;color:#ffe7a3}
-    .muted{color:#aab4bf;font-size:14px;line-height:1.4}
-    .big{font-size:22px;font-weight:800}
-    .modeLabel{font-size:20px;font-weight:800;margin:8px 0}
-    code{background:#0e1318;padding:2px 5px;border-radius:4px}
-  </style>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Bernie's Scanner</title>
+<style>
+*{box-sizing:border-box} html,body{height:100%;margin:0}
+body{font-family:Arial,sans-serif;background:#0b1015;color:white;overflow:hidden}
+.screen{height:100vh;display:flex;flex-direction:column;padding:8px;gap:6px}
+.top{border-radius:14px;padding:8px 10px;text-align:center;font-weight:900;letter-spacing:.5px;font-size:22px;line-height:1.1;background:#104225;border:2px solid #2fc36b;color:#caffd8}
+.top.addActive{background:#4a3510;border-color:#f4c542;color:#ffe7a3}
+.top.notReady{background:#4a1414;border-color:#ff5757;color:#ffd0d0}
+.modeRow{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+button,a.button{display:block;text-align:center;text-decoration:none;width:100%;border:0;border-radius:12px;font-weight:900;cursor:pointer;padding:12px 8px;font-size:18px;line-height:1}
+.modeBtn{opacity:.42;border:2px solid transparent}.modeBtn.active{opacity:1;border:2px solid white;box-shadow:0 0 0 2px rgba(255,255,255,.22)}
+.remove{background:#ff3b3b;color:white}.add{background:#2fc36b;color:#07140b}.authorize{background:#4da3ff;color:#06111f}
+.scanBox{background:#141b23;border:1px solid #2f3b47;border-radius:14px;padding:8px}
+label{display:block;color:#aab4bf;font-size:12px;margin-bottom:4px}
+input{width:100%;font-size:24px;padding:12px;border-radius:10px;border:2px solid #526170;background:#05080b;color:white;outline:none}
+input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
+.pinRow{display:grid;grid-template-columns:1fr 92px;gap:6px;margin-top:6px;align-items:end}
+.submit{background:#4da3ff;color:#06111f;padding:13px 8px;font-size:16px}
+.result{flex:1;min-height:82px;border-radius:14px;padding:10px;border:2px solid #2f3b47;overflow:hidden}
+.okResult{background:#103d24;border-color:#2fc36b;color:#caffd8}.errorResult{background:#441616;border-color:#ff5e5e;color:#ffd0d0}.neutralResult{background:#141b23}
+.resultMain{font-size:25px;font-weight:900;line-height:1.05;margin-bottom:4px}.product{font-size:18px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta{font-size:13px;color:#d8e0e7;line-height:1.25;margin-top:3px}.errorText{font-size:14px;line-height:1.25}
+.bottomRow{display:grid;grid-template-columns:1fr 1fr;gap:6px}.undo{background:#f4c542;color:#171200}.clear{background:#25313d;color:#d8e0e7}
+.installBox{padding:8px;border-radius:12px;background:#441616;border:1px solid #ff5e5e;text-align:center}.small{font-size:12px;color:#aab4bf}
+code{background:#05080b;padding:2px 4px;border-radius:4px}
+</style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Bernie's Inventory Scanner</h1>
-  <div class="muted">REMOVE is normal. To receive stock: enter PIN once, tap ADD MODE, then scan. Timer resets after each ADD scan.</div>
+<div class="screen">
+  <div id="statusBar" class="top">READY TO SCAN</div>
+  ${missing.length ? `<div class="installBox"><b>Missing setup:</b><br>${missing.map(x=>`<code>${x}</code>`).join(" ")}</div>` : ""}
+  ${!installed ? `<div class="installBox"><b>Shopify not authorized</b><br><a class="button authorize" href="/auth">AUTHORIZE SHOPIFY</a></div>` : ""}
 
-  ${missing.length ? `<div class="card err"><div class="big">Missing Railway variables</div><p>${missing.map(x=>`<code>${x}</code>`).join("<br>")}</p></div>` : ""}
-  ${!installed ? `<div class="card err"><div class="big">App not authorized yet</div><p>Click this once to install/authorize Shopify.</p><a class="button install" href="/auth">INSTALL / AUTHORIZE SHOPIFY</a></div>` : `<div class="card ok"><div class="big">Shopify authorized</div></div>`}
-  ${message ? `<div class="card ok"><div class="big">${htmlEscape(message)}</div></div>` : ""}
-  ${error ? `<div class="card err"><div class="big">Error</div><p>${htmlEscape(error)}</p></div>` : ""}
-
-  <div class="card" id="modeWarning" style="display:none;">
-    <div class="big">ADD MODE ACTIVE</div>
-    <div id="modeTimer" class="muted">Timer running.</div>
-  </div>
-
-  <div class="card">
-    <form id="scanForm" method="POST" action="/scan">
-      <input type="hidden" id="actionInput" name="action" value="${mode === "add" ? "add" : "remove"}">
-      <input type="hidden" id="addSessionInput" name="addSession" value="">
-
-      <div class="modeLabel">Current Mode: <span id="modeText">${mode === "add" ? "ADD 1" : "REMOVE 1"}</span></div>
-      <div class="modeRow">
-        <button class="modeBtn remove ${mode !== "add" ? "active" : ""}" id="removeMode" type="button">REMOVE MODE</button>
-        <button class="modeBtn add ${mode === "add" ? "active" : ""}" id="addMode" type="button">ADD MODE</button>
+  <form id="scanForm" method="POST" action="/scan">
+    <input type="hidden" id="actionInput" name="action" value="${mode === "add" ? "add" : "remove"}">
+    <input type="hidden" id="addSessionInput" name="addSession" value="">
+    <div class="modeRow">
+      <button class="modeBtn remove ${mode !== "add" ? "active" : ""}" id="removeMode" type="button">REMOVE</button>
+      <button class="modeBtn add ${mode === "add" ? "active" : ""}" id="addMode" type="button">ADD</button>
+    </div>
+    <div class="scanBox">
+      <label>Barcode</label>
+      <input id="barcode" name="barcode" placeholder="Scan barcode" autofocus autocomplete="off">
+      <div class="pinRow">
+        <div><label>PIN for ADD only</label><input id="pin" name="pin" placeholder="PIN" autocomplete="off"></div>
+        <button class="submit" type="submit">GO</button>
       </div>
+    </div>
+  </form>
 
-      <label class="muted">Barcode</label>
-      <input id="barcode" name="barcode" placeholder="Scan or type barcode" autofocus autocomplete="off">
-
-      <label class="muted">PIN required only to enter ADD MODE</label>
-      <input id="pin" name="pin" placeholder="PIN for add mode" autocomplete="off">
-
-      <button class="submit" type="submit">SUBMIT SCAN</button>
-    </form>
+  <div class="${resultClass}">
+    <div class="resultMain">${htmlEscape(resultText)}</div>
+    ${error ? `<div class="errorText">${htmlEscape(error)}</div>` : ""}
+    ${last ? `<div class="product">${htmlEscape(last.productTitle)}</div><div class="meta">SKU: ${htmlEscape(last.sku || "n/a")}<br>${last.before} to ${last.after} | ${htmlEscape(last.timestamp || "")}</div>` : `<div class="meta">Scanner field should stay focused. Tap CLEAR/FOCUS if needed.</div>`}
   </div>
 
-  ${last ? `<div class="card">
-    <div class="muted">Last adjustment - ${htmlEscape(last.timestamp || "")}</div>
-    <div class="big">${last.delta > 0 ? "ADDED" : "REMOVED"} 1 | ${htmlEscape(last.productTitle)}</div>
-    <p>${htmlEscape(last.variantTitle || "")}</p>
-    <p class="muted">SKU: ${htmlEscape(last.sku || "n/a")}<br>Barcode: ${htmlEscape(last.barcode)}<br>Before: ${last.before}<br>After: ${last.after}</p>
-
-    <form method="POST" action="/undo">
-      <input type="hidden" name="barcode" value="${htmlEscape(last.barcode)}">
-      <input type="hidden" name="undoDelta" value="${last.undoDelta}">
-      <button class="undo" type="submit">UNDO LAST ADJUSTMENT</button>
-    </form>
-  </div>` : ""}
-
-  <div class="card muted">
-    <p><b>Shop:</b> ${htmlEscape(shopHost() || "missing")}<br><b>Location:</b> ${htmlEscape(SHOPIFY_LOCATION_ID || "missing")}<br><b>App URL:</b> ${htmlEscape(APP_URL || "missing")}</p>
+  <div class="bottomRow">
+    ${last ? `<form method="POST" action="/undo"><input type="hidden" name="barcode" value="${htmlEscape(last.barcode)}"><input type="hidden" name="undoDelta" value="${last.undoDelta}"><button class="undo" type="submit">UNDO</button></form>` : `<button class="undo" type="button" disabled>UNDO</button>`}
+    <button class="clear" id="clearBtn" type="button">CLEAR / FOCUS</button>
   </div>
 </div>
 
 <script>
-const input = document.getElementById('barcode');
-const pin = document.getElementById('pin');
-const actionInput = document.getElementById('actionInput');
-const addSessionInput = document.getElementById('addSessionInput');
-const modeText = document.getElementById('modeText');
-const removeMode = document.getElementById('removeMode');
-const addMode = document.getElementById('addMode');
-const modeWarning = document.getElementById('modeWarning');
-const modeTimer = document.getElementById('modeTimer');
+const input=document.getElementById('barcode'), pin=document.getElementById('pin'), actionInput=document.getElementById('actionInput'), addSessionInput=document.getElementById('addSessionInput'), statusBar=document.getElementById('statusBar'), removeMode=document.getElementById('removeMode'), addMode=document.getElementById('addMode'), clearBtn=document.getElementById('clearBtn'), scanForm=document.getElementById('scanForm');
+const ADD_TIMEOUT_SECONDS=${ADD_MODE_TIMEOUT_SECONDS};
+let addExpiresAt=0, timerInterval=null;
 
-const ADD_TIMEOUT_SECONDS = ${ADD_MODE_TIMEOUT_SECONDS};
-let addExpiresAt = 0;
-let timerInterval = null;
+function makeSessionToken(){return Math.random().toString(36).slice(2)+Date.now().toString(36)}
+function saveAddSession(token,expiresAt){localStorage.setItem('scannerMode','add');localStorage.setItem('addSession',token);localStorage.setItem('addExpiresAt',String(expiresAt))}
+function clearAddSession(){localStorage.setItem('scannerMode','remove');localStorage.removeItem('addSession');localStorage.removeItem('addExpiresAt');addSessionInput.value=''}
+function updateStatus(text,modeClass){statusBar.className='top'+(modeClass?' '+modeClass:'');statusBar.textContent=text}
+function focusBarcode(){if(input && document.activeElement!==pin){input.focus()}}
 
-function makeSessionToken() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
-
-function saveAddSession(token, expiresAt) {
-  localStorage.setItem('scannerMode', 'add');
-  localStorage.setItem('addSession', token);
-  localStorage.setItem('addExpiresAt', String(expiresAt));
-}
-
-function clearAddSession() {
-  localStorage.setItem('scannerMode', 'remove');
-  localStorage.removeItem('addSession');
-  localStorage.removeItem('addExpiresAt');
-  addSessionInput.value = "";
-}
-
-function setMode(mode, options = {}) {
-  const resetTimer = options.resetTimer !== false;
-  const existingToken = options.token || localStorage.getItem('addSession') || "";
-
-  actionInput.value = mode;
-
-  if (mode === 'add') {
-    const token = existingToken || makeSessionToken();
-    addSessionInput.value = token;
-
-    addMode.classList.add('active');
-    removeMode.classList.remove('active');
-    modeText.textContent = 'ADD 1';
-    modeWarning.style.display = 'block';
-
-    if (resetTimer) {
-      addExpiresAt = Date.now() + (ADD_TIMEOUT_SECONDS * 1000);
-      saveAddSession(token, addExpiresAt);
-    }
-
-    startTimer();
+function setMode(mode,options={}){
+  const resetTimer=options.resetTimer!==false;
+  const existingToken=options.token || localStorage.getItem('addSession') || '';
+  actionInput.value=mode;
+  if(mode==='add'){
+    const typedPin=pin.value.trim();
+    if(!existingToken && typedPin===''){alert('Enter PIN first, then tap ADD.');pin.focus();return}
+    const token=existingToken || makeSessionToken();
+    addSessionInput.value=token;
+    addMode.classList.add('active');removeMode.classList.remove('active');
+    if(resetTimer){addExpiresAt=Date.now()+(ADD_TIMEOUT_SECONDS*1000);saveAddSession(token,addExpiresAt)}
+    pin.blur();focusBarcode();startTimer();
   } else {
-    removeMode.classList.add('active');
-    addMode.classList.remove('active');
-    modeText.textContent = 'REMOVE 1';
-    modeWarning.style.display = 'none';
-    actionInput.value = 'remove';
-    clearAddSession();
-
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      timerInterval = null;
-    }
+    removeMode.classList.add('active');addMode.classList.remove('active');actionInput.value='remove';clearAddSession();
+    if(timerInterval){clearInterval(timerInterval);timerInterval=null}
+    updateStatus('READY TO SCAN','');focusBarcode();
   }
-
-  if (input) input.focus();
 }
 
-function startTimer() {
-  if (timerInterval) clearInterval(timerInterval);
-
-  timerInterval = setInterval(() => {
-    if (actionInput.value !== 'add') return;
-
-    const secondsLeft = Math.ceil((addExpiresAt - Date.now()) / 1000);
-
-    if (secondsLeft <= 0) {
-      setMode('remove');
-      return;
-    }
-
-    modeTimer.textContent = 'ADD MODE expires in ' + secondsLeft + ' seconds. Each ADD scan resets timer.';
-  }, 250);
+function startTimer(){
+  if(timerInterval) clearInterval(timerInterval);
+  timerInterval=setInterval(()=>{
+    if(actionInput.value!=='add') return;
+    const secondsLeft=Math.ceil((addExpiresAt-Date.now())/1000);
+    if(secondsLeft<=0){setMode('remove');return}
+    updateStatus('ADD MODE - '+secondsLeft+'s','addActive');
+  },200);
 }
 
-removeMode.addEventListener('click', () => setMode('remove'));
+removeMode.addEventListener('click',()=>setMode('remove'));
+addMode.addEventListener('click',()=>setMode('add'));
+clearBtn.addEventListener('click',()=>{input.value='';focusBarcode()});
 
-addMode.addEventListener('click', () => {
-  if (pin.value.trim() === "") {
-    alert("Enter PIN first, then tap ADD MODE.");
-    pin.focus();
-    return;
-  }
-  setMode('add');
-  pin.blur();
-});
-
-const savedMode = localStorage.getItem('scannerMode');
-const savedExpires = Number(localStorage.getItem('addExpiresAt') || 0);
-const savedToken = localStorage.getItem('addSession') || "";
-
-if (savedMode === 'add' && savedExpires > Date.now() && savedToken) {
-  addExpiresAt = savedExpires;
-  setMode('add', { resetTimer: false, token: savedToken });
-} else {
-  setMode('remove');
-}
-
-document.getElementById('scanForm').addEventListener('submit', () => {
-  if (actionInput.value === 'add') {
-    const token = addSessionInput.value || localStorage.getItem('addSession') || makeSessionToken();
-    addExpiresAt = Date.now() + (ADD_TIMEOUT_SECONDS * 1000);
-    saveAddSession(token, addExpiresAt);
-    addSessionInput.value = token;
+scanForm.addEventListener('submit',()=>{
+  if(actionInput.value==='add'){
+    const token=addSessionInput.value || localStorage.getItem('addSession') || makeSessionToken();
+    addExpiresAt=Date.now()+(ADD_TIMEOUT_SECONDS*1000);
+    saveAddSession(token,addExpiresAt);
+    addSessionInput.value=token;
   }
 });
 
-if(input) input.focus();
+const savedMode=localStorage.getItem('scannerMode');
+const savedExpires=Number(localStorage.getItem('addExpiresAt') || 0);
+const savedToken=localStorage.getItem('addSession') || '';
+if(savedMode==='add' && savedExpires>Date.now() && savedToken){addExpiresAt=savedExpires;setMode('add',{resetTimer:false,token:savedToken})} else {setMode('remove')}
+
+window.addEventListener('load',()=>{if(input)input.value='';focusBarcode()});
+document.addEventListener('click',(e)=>{const tag=e.target.tagName.toLowerCase(); if(tag!=='input' && tag!=='button' && tag!=='a') focusBarcode()});
+setInterval(()=>{if(document.activeElement!==pin) focusBarcode()},700);
+if(input) focusBarcode();
 </script>
 </body>
 </html>`;
@@ -422,14 +321,12 @@ app.post("/scan", async (req, res) => {
 
     const now = Date.now();
     const lastAt = recent.get(`${barcode}:${action}`) || 0;
-    if (now - lastAt < 2000) throw new Error("Duplicate scan blocked. Wait 2 seconds and scan again if intentional.");
+    if (now - lastAt < DUPLICATE_SCAN_MS) throw new Error("Duplicate scan blocked. Scan again if intentional.");
     recent.set(`${barcode}:${action}`, now);
 
-    let delta = -1;
-    let mode = "remove";
-
+    let delta = -1, mode = "remove";
     if (action === "add") {
-      if (!addSession) throw new Error("ADD MODE session missing. Enter PIN and tap ADD MODE again.");
+      if (!addSession) throw new Error("ADD MODE session missing. Enter PIN and tap ADD again.");
       if (pin && pin !== APP_PIN) throw new Error("Wrong PIN for ADD MODE.");
       delta = 1;
       mode = "add";
@@ -446,9 +343,7 @@ app.post("/undo", async (req, res) => {
   try {
     const barcode = String(req.body.barcode || "").trim();
     const undoDelta = Number(req.body.undoDelta);
-
     if (!barcode || !undoDelta) throw new Error("Undo data missing. Perform a new scan first.");
-
     const r = await adjust(barcode, undoDelta);
     res.send(render({ message: `Undo complete: ${r.productTitle}`, last: r }));
   } catch (e) {
@@ -457,12 +352,6 @@ app.post("/undo", async (req, res) => {
 });
 
 app.get("/health", (req, res) => res.json({
-  ok:true,
-  installed:Boolean(installedAccessToken),
-  shop:shopHost(),
-  appUrl:APP_URL,
-  locationId: SHOPIFY_LOCATION_ID,
-  addModeTimeoutSeconds: ADD_MODE_TIMEOUT_SECONDS
+  ok:true, installed:Boolean(installedAccessToken), shop:shopHost(), appUrl:APP_URL,
+  locationId: SHOPIFY_LOCATION_ID, addModeTimeoutSeconds: ADD_MODE_TIMEOUT_SECONDS, duplicateScanMs: DUPLICATE_SCAN_MS
 }));
-
-app.listen(PORT, () => console.log(`Bernie's scanner running on port ${PORT}`));
