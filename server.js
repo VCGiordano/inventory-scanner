@@ -15,7 +15,7 @@ const APP_PIN = process.env.APP_PIN || "1234";
 const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
 const ADD_MODE_TIMEOUT_SECONDS = Number(process.env.ADD_MODE_TIMEOUT_SECONDS || 120);
 const DUPLICATE_SCAN_MS = Number(process.env.DUPLICATE_SCAN_MS || 500);
-const AUTO_SUBMIT_DELAY_MS = Number(process.env.AUTO_SUBMIT_DELAY_MS || 100);
+const AUTO_SUBMIT_DELAY_MS = Number(process.env.AUTO_SUBMIT_DELAY_MS || 750);
 const SCOPES = "read_products,read_inventory,write_inventory";
 
 let installedAccessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || null;
