@@ -8,10 +8,7 @@ const API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-04";
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-const SHOPIFY_STORE = (process.env.SHOPIFY_STORE || "")
-  .replace(/^https?:\/\//, "")
-  .replace(/\/$/, "");
-
+const SHOPIFY_STORE = (process.env.SHOPIFY_STORE || "").replace(/^https?:\/\//, "").replace(/\/$/, "");
 const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
 const SHOPIFY_LOCATION_ID = process.env.SHOPIFY_LOCATION_ID || "";
@@ -27,16 +24,12 @@ let recent = new Map();
 
 function shopHost() {
   if (!SHOPIFY_STORE) return "";
-  return SHOPIFY_STORE.endsWith(".myshopify.com")
-    ? SHOPIFY_STORE
-    : `${SHOPIFY_STORE}.myshopify.com`;
+  return SHOPIFY_STORE.endsWith(".myshopify.com") ? SHOPIFY_STORE : `${SHOPIFY_STORE}.myshopify.com`;
 }
 
 function locationGid() {
   if (!SHOPIFY_LOCATION_ID) return "";
-  if (SHOPIFY_LOCATION_ID.startsWith("gid://shopify/Location/")) {
-    return SHOPIFY_LOCATION_ID;
-  }
+  if (SHOPIFY_LOCATION_ID.startsWith("gid://shopify/Location/")) return SHOPIFY_LOCATION_ID;
   return `gid://shopify/Location/${SHOPIFY_LOCATION_ID}`;
 }
 
@@ -62,10 +55,7 @@ function installUrl() {
 }
 
 function esc(v) {
-  return String(v)
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    .trim();
+  return String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"').trim();
 }
 
 function htmlEscape(value) {
@@ -186,6 +176,7 @@ async function adjust(barcode, delta) {
     changes: [
       {
         delta,
+        changeFromQuantity: available,
         inventoryItemId: variant.inventoryItem.id,
         locationId: locationGid(),
       },
@@ -218,19 +209,20 @@ async function adjust(barcode, delta) {
 function render({ message = "", error = "", last = lastScan, mode = "remove" } = {}) {
   const missing = requireSetup();
   const installed = Boolean(installedAccessToken);
+
   const resultClass = error
     ? "result errorResult"
     : message
-      ? "result okResult"
-      : "result neutralResult";
+    ? "result okResult"
+    : "result neutralResult";
 
   const resultText = error
     ? "ERROR"
     : last
-      ? last.delta > 0
-        ? "ADDED 1"
-        : "REMOVED 1"
-      : "READY";
+    ? last.delta > 0
+      ? "ADDED 1"
+      : "REMOVED 1"
+    : "READY";
 
   return `<!doctype html>
 <html>
@@ -491,6 +483,10 @@ focusBarcode();
 
 app.get("/", (req, res) => {
   res.send(render());
+});
+
+app.get("/scan", (req, res) => {
+  res.redirect("/");
 });
 
 app.get("/auth", (req, res) => {
