@@ -465,21 +465,14 @@ window.addEventListener("load", () => {
   focusBarcode();
 });
 
-// Important: do NOT focus barcode when tapping blank space.
-// This prevents the keyboard from popping up constantly.
-document.addEventListener("click", (e) => {
+// Blank-space taps do nothing and do not steal focus.
+// This keeps the barcode field active without constantly popping keyboard.
+document.addEventListener("pointerdown", (e) => {
   const tag = e.target.tagName.toLowerCase();
 
   if (tag !== "input" && tag !== "button" && tag !== "a") {
+    e.preventDefault();
     return;
-  }
-
-  if (tag === "button") {
-    return;
-  }
-
-  if (document.activeElement !== pin) {
-    focusBarcode();
   }
 });
 
