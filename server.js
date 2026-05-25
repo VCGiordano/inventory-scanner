@@ -24,11 +24,7 @@ const scanLog = [];
 const MAX_LOG_ENTRIES = 200;
 
 function addLogEntry(entry) {
-  scanLog.unshift({
-    id: crypto.randomUUID(),
-    timestamp: new Date().toLocaleString(),
-    ...entry
-  });
+  scanLog.unshift({ id: crypto.randomUUID(), timestamp: new Date().toLocaleString(), ...entry });
   if (scanLog.length > MAX_LOG_ENTRIES) scanLog.length = MAX_LOG_ENTRIES;
 }
 
@@ -45,10 +41,8 @@ function locationGid() {
 
 function htmlEscape(value) {
   return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function requireSetup() {
@@ -68,7 +62,6 @@ function installUrl() {
     redirect_uri: `${APP_URL}/auth/callback`,
     state: crypto.randomBytes(16).toString("hex")
   });
-
   return `https://${shopHost()}/admin/oauth/authorize?${params.toString()}`;
 }
 
@@ -82,20 +75,13 @@ app.get("/auth/callback", async (req, res) => {
   try {
     const { code, shop } = req.query;
     if (!code) throw new Error("Missing authorization code from Shopify.");
-
     const response = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_id: SHOPIFY_CLIENT_ID,
-        client_secret: SHOPIFY_CLIENT_SECRET,
-        code
-      })
+      body: JSON.stringify({ client_id: SHOPIFY_CLIENT_ID, client_secret: SHOPIFY_CLIENT_SECRET, code })
     });
-
     const text = await response.text();
     if (!response.ok) throw new Error(`Token exchange failed ${response.status}: ${text}`);
-
     installedAccessToken = JSON.parse(text).access_token;
     res.redirect("/");
   } catch (error) {
@@ -104,29 +90,15 @@ app.get("/auth/callback", async (req, res) => {
 });
 
 async function gql(query, variables = {}) {
-  if (!installedAccessToken) {
-    throw new Error("App is not authorized yet. Tap AUTHORIZE SHOPIFY once.");
-  }
-
+  if (!installedAccessToken) throw new Error("App is not authorized yet. Tap AUTHORIZE SHOPIFY once.");
   const response = await fetch(`https://${shopHost()}/admin/api/2025-10/graphql.json`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": installedAccessToken
-    },
+    headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": installedAccessToken },
     body: JSON.stringify({ query, variables })
   });
-
   const json = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    throw new Error(`Shopify HTTP ${response.status}: ${JSON.stringify(json)}`);
-  }
-
-  if (json.errors) {
-    throw new Error(`Shopify GraphQL error: ${JSON.stringify(json.errors)}`);
-  }
-
+  if (!response.ok) throw new Error(`Shopify HTTP ${response.status}: ${JSON.stringify(json)}`);
+  if (json.errors) throw new Error(`Shopify GraphQL error: ${JSON.stringify(json.errors)}`);
   return json.data;
 }
 
@@ -140,22 +112,12 @@ async function findVariant(barcode) {
       productVariants(first: 5, query: $q) {
         edges {
           node {
-            id
-            title
-            sku
-            barcode
-            product {
-              title
-              vendor
-            }
+            id title sku barcode
+            product { title vendor }
             inventoryItem {
-              id
-              tracked
+              id tracked
               inventoryLevel(locationId: $locationId) {
-                quantities(names: ["available"]) {
-                  name
-                  quantity
-                }
+                quantities(names: ["available"]) { name quantity }
               }
             }
           }
@@ -163,73 +125,39 @@ async function findVariant(barcode) {
       }
     }
   `;
-
-  const data = await gql(query, {
-    q: `barcode:${escapeSearchValue(barcode)}`,
-    locationId: locationGid()
-  });
-
+  const data = await gql(query, { q: `barcode:${escapeSearchValue(barcode)}`, locationId: locationGid() });
   const variants = data.productVariants.edges.map((edge) => edge.node);
-
   if (variants.length === 0) throw new Error(`No product found for barcode: ${barcode}`);
   if (variants.length > 1) throw new Error(`Duplicate barcode found on ${variants.length} variants.`);
-
   const variant = variants[0];
   if (!variant.inventoryItem.tracked) throw new Error("Product found, but inventory is not tracked.");
-
   const available = variant.inventoryItem.inventoryLevel?.quantities?.[0]?.quantity;
-  if (available === undefined || available === null) {
-    throw new Error("No inventory level found at this location.");
-  }
-
+  if (available === undefined || available === null) throw new Error("No inventory level found at this location.");
   return { variant, available };
 }
 
 async function adjustInventory(barcode, delta) {
   const { variant, available } = await findVariant(barcode);
-
-  if (delta < 0 && available <= 0) {
-    throw new Error(`Inventory is already ${available}. Not subtracting.`);
-  }
-
+  if (delta < 0 && available <= 0) throw new Error(`Inventory is already ${available}. Not subtracting.`);
   const mutation = `
     mutation AdjustInventory($input: InventoryAdjustQuantitiesInput!) {
       inventoryAdjustQuantities(input: $input) {
-        userErrors {
-          field
-          message
-        }
-        inventoryAdjustmentGroup {
-          createdAt
-        }
+        userErrors { field message }
+        inventoryAdjustmentGroup { createdAt }
       }
     }
   `;
-
   const input = {
     reason: "correction",
     name: "available",
     referenceDocumentUri: `bernies-scanner://${Date.now()}-${crypto.randomUUID()}`,
-    changes: [
-      {
-        delta,
-        inventoryItemId: variant.inventoryItem.id,
-        locationId: locationGid()
-      }
-    ]
+    changes: [{ delta, inventoryItemId: variant.inventoryItem.id, locationId: locationGid() }]
   };
-
   const data = await gql(mutation, { input });
   const errors = data.inventoryAdjustQuantities.userErrors;
-
-  if (errors && errors.length) {
-    throw new Error(errors.map((err) => err.message).join("; "));
-  }
-
+  if (errors && errors.length) throw new Error(errors.map((err) => err.message).join("; "));
   return {
-    barcode,
-    delta,
-    undoDelta: -delta,
+    barcode, delta, undoDelta: -delta,
     productTitle: variant.product.title,
     variantTitle: variant.title,
     sku: variant.sku,
@@ -244,21 +172,15 @@ async function processScan({ barcode, action, pin, addSession }) {
   const cleanAction = String(action || "remove");
   const cleanPin = String(pin || "");
   const cleanAddSession = String(addSession || "");
-
   if (!cleanBarcode) throw new Error("No barcode entered.");
 
   const recentKey = `${cleanBarcode}:${cleanAction}`;
   const now = Date.now();
   const lastScanAt = recentScans.get(recentKey) || 0;
-
-  if (now - lastScanAt < DUPLICATE_SCAN_MS) {
-    throw new Error("Duplicate scan blocked. Scan again if intentional.");
-  }
-
+  if (now - lastScanAt < DUPLICATE_SCAN_MS) throw new Error("Duplicate scan blocked. Scan again if intentional.");
   recentScans.set(recentKey, now);
 
   let delta = -1;
-
   if (cleanAction === "add") {
     if (!cleanAddSession) throw new Error("ADD MODE session missing. Enter PIN and tap ADD again.");
     if (cleanPin && cleanPin !== APP_PIN) throw new Error("Wrong PIN for ADD MODE.");
@@ -291,9 +213,7 @@ app.post("/undo-json", async (req, res) => {
   try {
     const barcode = String(req.body.barcode || "").trim();
     const undoDelta = Number(req.body.undoDelta);
-
     if (!barcode || !undoDelta) throw new Error("Undo data missing.");
-
     const result = await adjustInventory(barcode, undoDelta);
     addLogEntry({
       type: "UNDO",
@@ -317,17 +237,10 @@ app.get("/logs-json", (req, res) => {
 function renderPage(setupError = "") {
   const missing = requireSetup();
   const setupMessages = [];
-
   if (missing.length) setupMessages.push(`Missing Railway variables: ${missing.join(", ")}`);
   if (setupError) setupMessages.push(setupError);
-
-  const setupHtml = setupMessages
-    .map((msg) => `<div class="installBox"><b>Setup/Error:</b><br>${htmlEscape(msg)}</div>`)
-    .join("");
-
-  const authHtml = installedAccessToken
-    ? ""
-    : `<div class="installBox"><b>Shopify not authorized</b><br><a class="button authorize" href="/auth">AUTHORIZE SHOPIFY</a></div>`;
+  const setupHtml = setupMessages.map((msg) => `<div class="installBox"><b>Setup/Error:</b><br>${htmlEscape(msg)}</div>`).join("");
+  const authHtml = installedAccessToken ? "" : `<div class="installBox"><b>Shopify not authorized</b><br><a class="button authorize" href="/auth">AUTHORIZE SHOPIFY</a></div>`;
 
   return `<!doctype html>
 <html>
@@ -338,38 +251,35 @@ function renderPage(setupError = "") {
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{font-family:Arial,sans-serif;background:#0b1015;color:white;overflow:hidden}
-.screen{height:100vh;display:flex;flex-direction:column;padding:8px;gap:6px}
-.top{border-radius:14px;padding:8px 10px;text-align:center;font-weight:900;letter-spacing:.5px;font-size:22px;line-height:1.1;background:#104225;border:2px solid #2fc36b;color:#caffd8}
+.screen{height:100dvh;min-height:100vh;display:flex;flex-direction:column;padding:6px;gap:5px}
+.top{border-radius:14px;padding:7px 10px;text-align:center;font-weight:900;letter-spacing:.5px;font-size:21px;line-height:1.1;background:#104225;border:2px solid #2fc36b;color:#caffd8}
 .top.addActive{background:#4a3510;border-color:#f4c542;color:#ffe7a3}
 .top.processing{background:#17314a;border-color:#4da3ff;color:#d7ecff}
 .top.errorTop{background:#4a1414;border-color:#ff5757;color:#ffd0d0}
-.modeRow{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-button,a.button{display:block;text-align:center;text-decoration:none;width:100%;border:0;border-radius:12px;font-weight:900;cursor:pointer;padding:12px 8px;font-size:18px;line-height:1}
+.modeRow{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+button,a.button{display:block;text-align:center;text-decoration:none;width:100%;border:0;border-radius:12px;font-weight:900;cursor:pointer;padding:10px 6px;font-size:16px;line-height:1}
 .modeBtn{opacity:.42;border:2px solid transparent}
 .modeBtn.active{opacity:1;border:2px solid white;box-shadow:0 0 0 2px rgba(255,255,255,.22)}
 .remove{background:#ff3b3b;color:white}
 .add{background:#2fc36b;color:#07140b}
 .authorize{background:#4da3ff;color:#06111f}
-.scanBox{background:#141b23;border:1px solid #2f3b47;border-radius:14px;padding:8px}
-label{display:block;color:#aab4bf;font-size:12px;margin-bottom:4px}
-input{width:100%;font-size:24px;padding:12px;border-radius:10px;border:2px solid #526170;background:#05080b;color:white;outline:none}
+.scanBox{background:#141b23;border:1px solid #2f3b47;border-radius:14px;padding:7px}
+label{display:block;color:#aab4bf;font-size:12px;margin-bottom:3px}
+input{width:100%;font-size:23px;padding:10px;border-radius:10px;border:2px solid #526170;background:#05080b;color:white;outline:none}
 input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
-.pinBox{margin-top:6px}
-.result{flex:1;min-height:82px;border-radius:14px;padding:10px;border:2px solid #2f3b47;overflow:hidden}
+.pinBox{margin-top:5px}
+.result{flex:1;min-height:68px;border-radius:14px;padding:8px;border:2px solid #2f3b47;overflow:hidden}
 .okResult{background:#103d24;border-color:#2fc36b;color:#caffd8}
 .errorResult{background:#441616;border-color:#ff5e5e;color:#ffd0d0}
 .neutralResult{background:#141b23}
-.resultMain{font-size:25px;font-weight:900;line-height:1.05;margin-bottom:4px}
-.product{font-size:18px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.meta{font-size:13px;color:#d8e0e7;line-height:1.25;margin-top:3px}
-.errorText{font-size:14px;line-height:1.25}
-.bottomRow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.resultMain{font-size:24px;font-weight:900;line-height:1.05;margin-bottom:3px}
+.product{font-size:17px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta{font-size:12px;color:#d8e0e7;line-height:1.25;margin-top:3px}
+.bottomRow{display:grid;grid-template-columns:1fr 1fr;gap:5px;flex-shrink:0}
 .undo{background:#f4c542;color:#171200}
-.clear{background:#25313d;color:#d8e0e7}
 .logBtn{background:#4da3ff;color:#06111f}
-.installBox{padding:8px;border-radius:12px;background:#441616;border:1px solid #ff5e5e;text-align:center}
-code{background:#05080b;padding:2px 4px;border-radius:4px}
-#logOverlay{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:1000;display:none;padding:10px}
+.installBox{padding:7px;border-radius:12px;background:#441616;border:1px solid #ff5e5e;text-align:center}
+#logOverlay{position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:1000;display:none;padding:10px}
 .logPanel{height:100%;display:flex;flex-direction:column;background:#101820;border:1px solid #334150;border-radius:14px;overflow:hidden}
 .logHeader{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:10px;border-bottom:1px solid #334150}
 .logHeader h2{font-size:22px;margin:0}
@@ -415,7 +325,6 @@ code{background:#05080b;padding:2px 4px;border-radius:4px}
   <div class="bottomRow">
     <button class="undo" id="undoBtn" type="button" disabled>UNDO</button>
     <button class="logBtn" id="logBtn" type="button">LOG</button>
-    <button class="clear" id="clearBtn" type="button">FOCUS</button>
   </div>
 </div>
 
@@ -430,334 +339,183 @@ code{background:#05080b;padding:2px 4px;border-radius:4px}
 </div>
 
 <script>
-const input = document.getElementById('barcode');
-const pin = document.getElementById('pin');
-const actionInput = document.getElementById('actionInput');
-const addSessionInput = document.getElementById('addSessionInput');
-const statusBar = document.getElementById('statusBar');
-const removeMode = document.getElementById('removeMode');
-const addMode = document.getElementById('addMode');
-const clearBtn = document.getElementById('clearBtn');
-const logBtn = document.getElementById('logBtn');
-const closeLogBtn = document.getElementById('closeLogBtn');
-const logOverlay = document.getElementById('logOverlay');
-const logList = document.getElementById('logList');
-const undoBtn = document.getElementById('undoBtn');
-const resultBox = document.getElementById('resultBox');
-const resultMain = document.getElementById('resultMain');
-const resultDetail = document.getElementById('resultDetail');
+const input=document.getElementById('barcode');
+const pin=document.getElementById('pin');
+const actionInput=document.getElementById('actionInput');
+const addSessionInput=document.getElementById('addSessionInput');
+const statusBar=document.getElementById('statusBar');
+const removeMode=document.getElementById('removeMode');
+const addMode=document.getElementById('addMode');
+const undoBtn=document.getElementById('undoBtn');
+const logBtn=document.getElementById('logBtn');
+const closeLogBtn=document.getElementById('closeLogBtn');
+const logOverlay=document.getElementById('logOverlay');
+const logList=document.getElementById('logList');
+const resultBox=document.getElementById('resultBox');
+const resultMain=document.getElementById('resultMain');
+const resultDetail=document.getElementById('resultDetail');
 
-const ADD_TIMEOUT_SECONDS = ${ADD_MODE_TIMEOUT_SECONDS};
-const AUTO_SUBMIT_DELAY_MS = ${AUTO_SUBMIT_DELAY_MS};
+const ADD_TIMEOUT_SECONDS=${ADD_MODE_TIMEOUT_SECONDS};
+const AUTO_SUBMIT_DELAY_MS=${AUTO_SUBMIT_DELAY_MS};
 
-let addExpiresAt = 0;
-let timerInterval = null;
-let submitTimer = null;
-let isSubmitting = false;
-let lastResult = null;
+let addExpiresAt=0,timerInterval=null,submitTimer=null,isSubmitting=false,lastResult=null;
 
-function makeSessionToken() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
+function makeSessionToken(){return Math.random().toString(36).slice(2)+Date.now().toString(36)}
+function saveAddSession(token,expiresAt){localStorage.setItem('scannerMode','add');localStorage.setItem('addSession',token);localStorage.setItem('addExpiresAt',String(expiresAt))}
+function clearAddSession(){localStorage.setItem('scannerMode','remove');localStorage.removeItem('addSession');localStorage.removeItem('addExpiresAt');addSessionInput.value=''}
+function updateStatus(text,modeClass){statusBar.className='top'+(modeClass?' '+modeClass:'');statusBar.textContent=text}
+function htmlEscapeClient(value){return String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function forceFocus(){if(!input||isSubmitting||logOverlay.style.display==='block')return;if(document.activeElement!==pin){input.focus();try{input.setSelectionRange(input.value.length,input.value.length)}catch(e){}}}
+function setResult(kind,main,detail){const cls=kind==='ok'?'okResult':kind==='error'?'errorResult':'neutralResult';resultBox.className='result '+cls;resultMain.textContent=main;resultDetail.innerHTML=detail}
 
-function saveAddSession(token, expiresAt) {
-  localStorage.setItem('scannerMode', 'add');
-  localStorage.setItem('addSession', token);
-  localStorage.setItem('addExpiresAt', String(expiresAt));
-}
-
-function clearAddSession() {
-  localStorage.setItem('scannerMode', 'remove');
-  localStorage.removeItem('addSession');
-  localStorage.removeItem('addExpiresAt');
-  addSessionInput.value = '';
-}
-
-function updateStatus(text, modeClass) {
-  statusBar.className = 'top' + (modeClass ? ' ' + modeClass : '');
-  statusBar.textContent = text;
-}
-
-function forceFocus() {
-  if (!input || isSubmitting || logOverlay.style.display === 'block') return;
-  if (document.activeElement !== pin) {
-    input.focus();
-    try {
-      input.setSelectionRange(input.value.length, input.value.length);
-    } catch (error) {}
-  }
-}
-
-function setResult(kind, main, detail) {
-  const cls = kind === 'ok' ? 'okResult' : kind === 'error' ? 'errorResult' : 'neutralResult';
-  resultBox.className = 'result ' + cls;
-  resultMain.textContent = main;
-  resultDetail.innerHTML = detail;
-}
-
-function setMode(mode, options = {}) {
-  const resetTimer = options.resetTimer !== false;
-  const existingToken = options.token || localStorage.getItem('addSession') || '';
-
-  actionInput.value = mode;
-
-  if (mode === 'add') {
-    const typedPin = pin.value.trim();
-
-    if (!existingToken && typedPin === '') {
-      alert('Enter PIN first, then tap ADD.');
-      pin.focus();
-      return;
-    }
-
-    const token = existingToken || makeSessionToken();
-    addSessionInput.value = token;
-
-    addMode.classList.add('active');
-    removeMode.classList.remove('active');
-
-    if (resetTimer) {
-      addExpiresAt = Date.now() + (ADD_TIMEOUT_SECONDS * 1000);
-      saveAddSession(token, addExpiresAt);
-    }
-
-    pin.value = '';
+function setMode(mode,options={}){
+  const resetTimer=options.resetTimer!==false;
+  const existingToken=options.token||localStorage.getItem('addSession')||'';
+  actionInput.value=mode;
+  if(mode==='add'){
+    const typedPin=pin.value.trim();
+    if(!existingToken&&typedPin===''){alert('Enter PIN first, then tap ADD.');pin.focus();return}
+    const token=existingToken||makeSessionToken();
+    addSessionInput.value=token;
+    addMode.classList.add('active');removeMode.classList.remove('active');
+    if(resetTimer){addExpiresAt=Date.now()+(ADD_TIMEOUT_SECONDS*1000);saveAddSession(token,addExpiresAt)}
+    pin.value='';
     pin.blur();
     forceFocus();
-    setTimeout(forceFocus, 50);
+    setTimeout(forceFocus,50);
     startTimer();
-  } else {
-    removeMode.classList.add('active');
-    addMode.classList.remove('active');
-    actionInput.value = 'remove';
+  }else{
+    removeMode.classList.add('active');addMode.classList.remove('active');
+    actionInput.value='remove';
     clearAddSession();
-
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      timerInterval = null;
-    }
-
-    updateStatus('READY TO SCAN', '');
+    if(timerInterval){clearInterval(timerInterval);timerInterval=null}
+    updateStatus('READY TO SCAN','');
     forceFocus();
-    setTimeout(forceFocus, 50);
+    setTimeout(forceFocus,50);
   }
 }
 
-function startTimer() {
-  if (timerInterval) clearInterval(timerInterval);
-
-  timerInterval = setInterval(() => {
-    if (actionInput.value !== 'add') return;
-
-    const secondsLeft = Math.ceil((addExpiresAt - Date.now()) / 1000);
-
-    if (secondsLeft <= 0) {
-      setMode('remove');
-      return;
-    }
-
-    updateStatus('ADD MODE - ' + secondsLeft + 's', 'addActive');
-  }, 200);
+function startTimer(){
+  if(timerInterval)clearInterval(timerInterval);
+  timerInterval=setInterval(()=>{
+    if(actionInput.value!=='add')return;
+    const secondsLeft=Math.ceil((addExpiresAt-Date.now())/1000);
+    if(secondsLeft<=0){setMode('remove');return}
+    updateStatus('ADD MODE - '+secondsLeft+'s','addActive');
+  },200);
 }
 
-function prepareAddSessionIfNeeded() {
-  if (actionInput.value === 'add') {
-    const token = addSessionInput.value || localStorage.getItem('addSession') || makeSessionToken();
-    addExpiresAt = Date.now() + (ADD_TIMEOUT_SECONDS * 1000);
-    saveAddSession(token, addExpiresAt);
-    addSessionInput.value = token;
+function prepareAddSessionIfNeeded(){
+  if(actionInput.value==='add'){
+    const token=addSessionInput.value||localStorage.getItem('addSession')||makeSessionToken();
+    addExpiresAt=Date.now()+(ADD_TIMEOUT_SECONDS*1000);
+    saveAddSession(token,addExpiresAt);
+    addSessionInput.value=token;
   }
 }
 
-async function submitScan() {
-  if (isSubmitting) return;
-
-  const barcode = (input.value || '').trim();
-  if (barcode.length < 3) return;
-
-  isSubmitting = true;
-  updateStatus('PROCESSING...', 'processing');
+async function submitScan(){
+  if(isSubmitting)return;
+  const barcode=(input.value||'').trim();
+  if(barcode.length<3)return;
+  isSubmitting=true;
+  updateStatus('PROCESSING...','processing');
   prepareAddSessionIfNeeded();
-
-  try {
-    const response = await fetch('/scan-json', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        barcode,
-        action: actionInput.value,
-        pin: pin.value,
-        addSession: addSessionInput.value
-      })
-    });
-
-    const data = await response.json();
-
-    if (!data.ok) {
-      updateStatus('ERROR', 'errorTop');
-      setResult('error', 'ERROR', data.error || 'Unknown error');
-    } else {
-      lastResult = data.result;
-      const r = data.result;
-      const main = r.delta > 0 ? 'ADDED 1' : 'REMOVED 1';
-      const detail = htmlEscapeClient(r.productTitle) + '<br><span class="meta">SKU: ' +
-        htmlEscapeClient(r.sku || 'n/a') + '<br>' + r.before + ' to ' + r.after + ' | ' +
-        htmlEscapeClient(r.timestamp || '') + '</span>';
-
-      setResult('ok', main, detail);
-      updateStatus(actionInput.value === 'add' ? 'ADD MODE - ' + ADD_TIMEOUT_SECONDS + 's' : 'READY TO SCAN', actionInput.value === 'add' ? 'addActive' : '');
-      undoBtn.disabled = false;
+  try{
+    const response=await fetch('/scan-json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({barcode,action:actionInput.value,pin:pin.value,addSession:addSessionInput.value})});
+    const data=await response.json();
+    if(!data.ok){
+      updateStatus('ERROR','errorTop');
+      setResult('error','ERROR',data.error||'Unknown error');
+    }else{
+      lastResult=data.result;
+      const r=data.result;
+      const main=r.delta>0?'ADDED 1':'REMOVED 1';
+      const detail=htmlEscapeClient(r.productTitle)+'<br><span class="meta">SKU: '+htmlEscapeClient(r.sku||'n/a')+'<br>'+r.before+' to '+r.after+' | '+htmlEscapeClient(r.timestamp||'')+'</span>';
+      setResult('ok',main,detail);
+      updateStatus(actionInput.value==='add'?'ADD MODE - '+ADD_TIMEOUT_SECONDS+'s':'READY TO SCAN',actionInput.value==='add'?'addActive':'');
+      undoBtn.disabled=false;
     }
-  } catch (error) {
-    updateStatus('ERROR', 'errorTop');
-    setResult('error', 'ERROR', error.message);
+  }catch(error){
+    updateStatus('ERROR','errorTop');
+    setResult('error','ERROR',error.message);
   }
-
-  input.value = '';
-  isSubmitting = false;
-  setTimeout(forceFocus, 20);
-  setTimeout(forceFocus, 120);
+  input.value='';
+  isSubmitting=false;
+  setTimeout(forceFocus,20);
+  setTimeout(forceFocus,120);
 }
 
-function htmlEscapeClient(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+function autoSubmitSoon(){
+  if(isSubmitting)return;
+  const value=(input.value||'').trim();
+  if(value.length<3)return;
+  if(submitTimer)clearTimeout(submitTimer);
+  submitTimer=setTimeout(submitScan,AUTO_SUBMIT_DELAY_MS);
 }
 
-function autoSubmitSoon() {
-  if (isSubmitting) return;
-
-  const value = (input.value || '').trim();
-  if (value.length < 3) return;
-
-  if (submitTimer) clearTimeout(submitTimer);
-  submitTimer = setTimeout(submitScan, AUTO_SUBMIT_DELAY_MS);
-}
-
-
-async function openLog() {
-  logOverlay.style.display = 'block';
-  logList.innerHTML = '<div class="meta">Loading...</div>';
-  try {
-    const response = await fetch('/logs-json');
-    const data = await response.json();
-    if (!data.ok || !data.logs || data.logs.length === 0) {
-      logList.innerHTML = '<div class="meta">No scans logged yet.</div>';
-      return;
-    }
-    logList.innerHTML = data.logs.map((item) => {
-      const typeClass = item.type === 'ADD' ? 'addType' : item.type === 'UNDO' ? 'undoType' : 'removeType';
-      return '<div class="logItem ' + typeClass + '">' +
-        '<div class="logType">' + htmlEscapeClient(item.type) + ' | ' + htmlEscapeClient(item.timestamp) + '</div>' +
-        '<div class="logProduct">' + htmlEscapeClient(item.productTitle || '') + '</div>' +
-        '<div class="logMeta">SKU: ' + htmlEscapeClient(item.sku || 'n/a') + '<br>' +
-        htmlEscapeClient(item.barcode || '') + '<br>' + item.before + ' to ' + item.after + '</div>' +
-      '</div>';
+async function openLog(){
+  logOverlay.style.display='block';
+  logList.innerHTML='<div class="meta">Loading...</div>';
+  try{
+    const response=await fetch('/logs-json');
+    const data=await response.json();
+    if(!data.ok||!data.logs||data.logs.length===0){logList.innerHTML='<div class="meta">No scans logged yet.</div>';return}
+    logList.innerHTML=data.logs.map((item)=>{
+      const typeClass=item.type==='ADD'?'addType':item.type==='UNDO'?'undoType':'removeType';
+      return '<div class="logItem '+typeClass+'"><div class="logType">'+htmlEscapeClient(item.type)+' | '+htmlEscapeClient(item.timestamp)+'</div><div class="logProduct">'+htmlEscapeClient(item.productTitle||'')+'</div><div class="logMeta">SKU: '+htmlEscapeClient(item.sku||'n/a')+'<br>'+htmlEscapeClient(item.barcode||'')+'<br>'+item.before+' to '+item.after+'</div></div>';
     }).join('');
-  } catch (error) {
-    logList.innerHTML = '<div class="meta">Could not load log: ' + htmlEscapeClient(error.message) + '</div>';
+  }catch(error){
+    logList.innerHTML='<div class="meta">Could not load log: '+htmlEscapeClient(error.message)+'</div>';
   }
 }
 
-function closeLog() {
-  logOverlay.style.display = 'none';
-  setTimeout(forceFocus, 50);
-}
+function closeLog(){logOverlay.style.display='none';setTimeout(forceFocus,50)}
 
-removeMode.addEventListener('click', () => setMode('remove'));
-addMode.addEventListener('click', () => setMode('add'));
+removeMode.addEventListener('click',()=>setMode('remove'));
+addMode.addEventListener('click',()=>setMode('add'));
+logBtn.addEventListener('click',openLog);
+closeLogBtn.addEventListener('click',closeLog);
 
-clearBtn.addEventListener('click', () => {
-  input.value = '';
-  forceFocus();
-});
-
-logBtn.addEventListener('click', openLog);
-closeLogBtn.addEventListener('click', closeLog);
-
-undoBtn.addEventListener('click', async () => {
-  if (!lastResult || isSubmitting) return;
-
-  isSubmitting = true;
-  updateStatus('UNDOING...', 'processing');
-
-  try {
-    const response = await fetch('/undo-json', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        barcode: lastResult.barcode,
-        undoDelta: lastResult.undoDelta
-      })
-    });
-
-    const data = await response.json();
-
-    if (!data.ok) {
-      updateStatus('ERROR', 'errorTop');
-      setResult('error', 'ERROR', data.error || 'Unknown error');
-    } else {
-      lastResult = data.result;
-      const r = data.result;
-      const detail = htmlEscapeClient(r.productTitle) + '<br><span class="meta">' +
-        r.before + ' to ' + r.after + ' | ' + htmlEscapeClient(r.timestamp || '') + '</span>';
-      setResult('ok', 'UNDO COMPLETE', detail);
-      updateStatus('READY TO SCAN', '');
+undoBtn.addEventListener('click',async()=>{
+  if(!lastResult||isSubmitting)return;
+  isSubmitting=true;
+  updateStatus('UNDOING...','processing');
+  try{
+    const response=await fetch('/undo-json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({barcode:lastResult.barcode,undoDelta:lastResult.undoDelta})});
+    const data=await response.json();
+    if(!data.ok){
+      updateStatus('ERROR','errorTop');
+      setResult('error','ERROR',data.error||'Unknown error');
+    }else{
+      lastResult=data.result;
+      const r=data.result;
+      const detail=htmlEscapeClient(r.productTitle)+'<br><span class="meta">'+r.before+' to '+r.after+' | '+htmlEscapeClient(r.timestamp||'')+'</span>';
+      setResult('ok','UNDO COMPLETE',detail);
+      updateStatus('READY TO SCAN','');
     }
-  } catch (error) {
-    updateStatus('ERROR', 'errorTop');
-    setResult('error', 'ERROR', error.message);
+  }catch(error){
+    updateStatus('ERROR','errorTop');
+    setResult('error','ERROR',error.message);
   }
-
-  input.value = '';
-  isSubmitting = false;
-  setTimeout(forceFocus, 50);
+  input.value='';
+  isSubmitting=false;
+  setTimeout(forceFocus,50);
 });
 
-input.addEventListener('input', autoSubmitSoon);
-input.addEventListener('change', autoSubmitSoon);
+input.addEventListener('input',autoSubmitSoon);
+input.addEventListener('change',autoSubmitSoon);
+input.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();submitScan()}});
 
-input.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    submitScan();
-  }
-});
+const savedMode=localStorage.getItem('scannerMode');
+const savedExpires=Number(localStorage.getItem('addExpiresAt')||0);
+const savedToken=localStorage.getItem('addSession')||'';
+if(savedMode==='add'&&savedExpires>Date.now()&&savedToken){addExpiresAt=savedExpires;setMode('add',{resetTimer:false,token:savedToken})}else{setMode('remove')}
 
-pin.addEventListener('blur', () => {
-  if (actionInput.value !== 'add') pin.value = '';
-});
-
-const savedMode = localStorage.getItem('scannerMode');
-const savedExpires = Number(localStorage.getItem('addExpiresAt') || 0);
-const savedToken = localStorage.getItem('addSession') || '';
-
-if (savedMode === 'add' && savedExpires > Date.now() && savedToken) {
-  addExpiresAt = savedExpires;
-  setMode('add', { resetTimer: false, token: savedToken });
-} else {
-  setMode('remove');
-}
-
-window.addEventListener('load', () => {
-  input.value = '';
-  forceFocus();
-  setTimeout(forceFocus, 100);
-});
-
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) setTimeout(forceFocus, 100);
-});
-
-document.addEventListener('click', (event) => {
-  const tag = event.target.tagName.toLowerCase();
-  if (tag !== 'input' && tag !== 'button' && tag !== 'a') forceFocus();
-});
-
-setInterval(forceFocus, 500);
+window.addEventListener('load',()=>{input.value='';forceFocus();setTimeout(forceFocus,100)});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(forceFocus,100)});
+document.addEventListener('click',(event)=>{const tag=event.target.tagName.toLowerCase();if(tag!=='input'&&tag!=='button'&&tag!=='a')forceFocus()});
+setInterval(forceFocus,500);
 forceFocus();
 </script>
 </body>
@@ -782,5 +540,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v15 running on port ${PORT}`);
+  console.log(`Bernie's scanner v16 running on port ${PORT}`);
 });
