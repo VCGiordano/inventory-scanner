@@ -1,14 +1,15 @@
-# Bernie's Scanner v17 Fixed Bottom Controls
+# Bernie's Scanner v19 - No Undo + Variant Display
 
-Changes from v16:
-- UNDO and LOG buttons are fixed to bottom of screen
-- Buttons now stay visible on phones and C66
-- Added bottom padding to avoid overlap
-- Slightly reduced result area height
+Built from v17 path because v18 was not implemented.
 
-Keeps:
-- v14 stable scan architecture
-- no reload scanning
-- log viewer
-- undo
-- PIN fix
+Changes:
+- Removes visible UNDO button
+- Keeps LOG fixed at bottom
+- Shows variant/detail information on scan confirmation
+- Shows variant/detail information in scan log
+- Uses SKU/Barcode label since SKU equals barcode in this store
+- Does not touch scanner/focus/keyboard behavior
+
+Important:
+- Log is in-memory only.
+- Railway restart/redeploy clears the log.
