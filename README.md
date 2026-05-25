@@ -1,15 +1,16 @@
-# Bernie's Scanner v19 - No Undo + Variant Display
+# Bernie's Scanner v20 - Keyboard Test
 
-Built from v17 path because v18 was not implemented.
+Built from v19.
 
-Changes:
-- Removes visible UNDO button
-- Keeps LOG fixed at bottom
-- Shows variant/detail information on scan confirmation
-- Shows variant/detail information in scan log
-- Uses SKU/Barcode label since SKU equals barcode in this store
-- Does not touch scanner/focus/keyboard behavior
+Only change:
+- Adds inputmode="none" to the barcode input to try suppressing the Android soft keyboard.
 
-Important:
-- Log is in-memory only.
-- Railway restart/redeploy clears the log.
+Does NOT change:
+- scanner behavior
+- focus behavior
+- no-reload architecture
+- LOG
+- variant display
+- ADD/REMOVE behavior
+
+If scanner input becomes unreliable, roll back to v19 immediately.
