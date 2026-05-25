@@ -15,11 +15,22 @@ const APP_PIN = process.env.APP_PIN || "1234";
 const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
 const ADD_MODE_TIMEOUT_SECONDS = Number(process.env.ADD_MODE_TIMEOUT_SECONDS || 120);
 const DUPLICATE_SCAN_MS = Number(process.env.DUPLICATE_SCAN_MS || 500);
-const AUTO_SUBMIT_DELAY_MS = Number(process.env.AUTO_SUBMIT_DELAY_MS || 750);
+const AUTO_SUBMIT_DELAY_MS = Number(process.env.AUTO_SUBMIT_DELAY_MS || 100);
 const SCOPES = "read_products,read_inventory,write_inventory";
 
 let installedAccessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || null;
 const recentScans = new Map();
+const scanLog = [];
+const MAX_LOG_ENTRIES = 200;
+
+function addLogEntry(entry) {
+  scanLog.unshift({
+    id: crypto.randomUUID(),
+    timestamp: new Date().toLocaleString(),
+    ...entry
+  });
+  if (scanLog.length > MAX_LOG_ENTRIES) scanLog.length = MAX_LOG_ENTRIES;
+}
 
 function shopHost() {
   if (!SHOPIFY_STORE) return "";
@@ -254,7 +265,17 @@ async function processScan({ barcode, action, pin, addSession }) {
     delta = 1;
   }
 
-  return await adjustInventory(cleanBarcode, delta);
+  const result = await adjustInventory(cleanBarcode, delta);
+  addLogEntry({
+    type: delta > 0 ? "ADD" : "REMOVE",
+    barcode: result.barcode,
+    sku: result.sku,
+    productTitle: result.productTitle,
+    before: result.before,
+    after: result.after,
+    delta: result.delta
+  });
+  return result;
 }
 
 app.post("/scan-json", async (req, res) => {
@@ -274,10 +295,23 @@ app.post("/undo-json", async (req, res) => {
     if (!barcode || !undoDelta) throw new Error("Undo data missing.");
 
     const result = await adjustInventory(barcode, undoDelta);
+    addLogEntry({
+      type: "UNDO",
+      barcode: result.barcode,
+      sku: result.sku,
+      productTitle: result.productTitle,
+      before: result.before,
+      after: result.after,
+      delta: result.delta
+    });
     res.json({ ok: true, result });
   } catch (error) {
     res.json({ ok: false, error: error.message });
   }
+});
+
+app.get("/logs-json", (req, res) => {
+  res.json({ ok: true, logs: scanLog });
 });
 
 function renderPage(setupError = "") {
@@ -329,11 +363,25 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
 .product{font-size:18px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .meta{font-size:13px;color:#d8e0e7;line-height:1.25;margin-top:3px}
 .errorText{font-size:14px;line-height:1.25}
-.bottomRow{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.bottomRow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
 .undo{background:#f4c542;color:#171200}
 .clear{background:#25313d;color:#d8e0e7}
+.logBtn{background:#4da3ff;color:#06111f}
 .installBox{padding:8px;border-radius:12px;background:#441616;border:1px solid #ff5e5e;text-align:center}
 code{background:#05080b;padding:2px 4px;border-radius:4px}
+#logOverlay{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:1000;display:none;padding:10px}
+.logPanel{height:100%;display:flex;flex-direction:column;background:#101820;border:1px solid #334150;border-radius:14px;overflow:hidden}
+.logHeader{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:10px;border-bottom:1px solid #334150}
+.logHeader h2{font-size:22px;margin:0}
+.closeLog{background:#ff3b3b;color:white;width:auto;padding:10px 14px}
+.logList{overflow:auto;padding:8px}
+.logItem{border:1px solid #334150;border-radius:10px;padding:8px;margin-bottom:8px;background:#141b23}
+.logItem.addType{border-color:#2fc36b}
+.logItem.removeType{border-color:#ff3b3b}
+.logItem.undoType{border-color:#f4c542}
+.logType{font-weight:900;font-size:16px}
+.logProduct{font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+.logMeta{font-size:12px;color:#d8e0e7;line-height:1.3;margin-top:3px}
 </style>
 </head>
 <body>
@@ -366,7 +414,18 @@ code{background:#05080b;padding:2px 4px;border-radius:4px}
 
   <div class="bottomRow">
     <button class="undo" id="undoBtn" type="button" disabled>UNDO</button>
-    <button class="clear" id="clearBtn" type="button">CLEAR / FOCUS</button>
+    <button class="logBtn" id="logBtn" type="button">LOG</button>
+    <button class="clear" id="clearBtn" type="button">FOCUS</button>
+  </div>
+</div>
+
+<div id="logOverlay">
+  <div class="logPanel">
+    <div class="logHeader">
+      <h2>Scan Log</h2>
+      <button class="closeLog" id="closeLogBtn" type="button">CLOSE</button>
+    </div>
+    <div id="logList" class="logList"><div class="meta">Loading...</div></div>
   </div>
 </div>
 
@@ -379,6 +438,10 @@ const statusBar = document.getElementById('statusBar');
 const removeMode = document.getElementById('removeMode');
 const addMode = document.getElementById('addMode');
 const clearBtn = document.getElementById('clearBtn');
+const logBtn = document.getElementById('logBtn');
+const closeLogBtn = document.getElementById('closeLogBtn');
+const logOverlay = document.getElementById('logOverlay');
+const logList = document.getElementById('logList');
 const undoBtn = document.getElementById('undoBtn');
 const resultBox = document.getElementById('resultBox');
 const resultMain = document.getElementById('resultMain');
@@ -416,7 +479,7 @@ function updateStatus(text, modeClass) {
 }
 
 function forceFocus() {
-  if (!input || isSubmitting) return;
+  if (!input || isSubmitting || logOverlay.style.display === 'block') return;
   if (document.activeElement !== pin) {
     input.focus();
     try {
@@ -458,6 +521,7 @@ function setMode(mode, options = {}) {
       saveAddSession(token, addExpiresAt);
     }
 
+    pin.value = '';
     pin.blur();
     forceFocus();
     setTimeout(forceFocus, 50);
@@ -573,6 +637,36 @@ function autoSubmitSoon() {
   submitTimer = setTimeout(submitScan, AUTO_SUBMIT_DELAY_MS);
 }
 
+
+async function openLog() {
+  logOverlay.style.display = 'block';
+  logList.innerHTML = '<div class="meta">Loading...</div>';
+  try {
+    const response = await fetch('/logs-json');
+    const data = await response.json();
+    if (!data.ok || !data.logs || data.logs.length === 0) {
+      logList.innerHTML = '<div class="meta">No scans logged yet.</div>';
+      return;
+    }
+    logList.innerHTML = data.logs.map((item) => {
+      const typeClass = item.type === 'ADD' ? 'addType' : item.type === 'UNDO' ? 'undoType' : 'removeType';
+      return '<div class="logItem ' + typeClass + '">' +
+        '<div class="logType">' + htmlEscapeClient(item.type) + ' | ' + htmlEscapeClient(item.timestamp) + '</div>' +
+        '<div class="logProduct">' + htmlEscapeClient(item.productTitle || '') + '</div>' +
+        '<div class="logMeta">SKU: ' + htmlEscapeClient(item.sku || 'n/a') + '<br>' +
+        htmlEscapeClient(item.barcode || '') + '<br>' + item.before + ' to ' + item.after + '</div>' +
+      '</div>';
+    }).join('');
+  } catch (error) {
+    logList.innerHTML = '<div class="meta">Could not load log: ' + htmlEscapeClient(error.message) + '</div>';
+  }
+}
+
+function closeLog() {
+  logOverlay.style.display = 'none';
+  setTimeout(forceFocus, 50);
+}
+
 removeMode.addEventListener('click', () => setMode('remove'));
 addMode.addEventListener('click', () => setMode('add'));
 
@@ -580,6 +674,9 @@ clearBtn.addEventListener('click', () => {
   input.value = '';
   forceFocus();
 });
+
+logBtn.addEventListener('click', openLog);
+closeLogBtn.addEventListener('click', closeLog);
 
 undoBtn.addEventListener('click', async () => {
   if (!lastResult || isSubmitting) return;
@@ -630,6 +727,10 @@ input.addEventListener('keydown', (event) => {
   }
 });
 
+pin.addEventListener('blur', () => {
+  if (actionInput.value !== 'add') pin.value = '';
+});
+
 const savedMode = localStorage.getItem('scannerMode');
 const savedExpires = Number(localStorage.getItem('addExpiresAt') || 0);
 const savedToken = localStorage.getItem('addSession') || '';
@@ -675,10 +776,11 @@ app.get("/health", (req, res) => {
     addModeTimeoutSeconds: ADD_MODE_TIMEOUT_SECONDS,
     duplicateScanMs: DUPLICATE_SCAN_MS,
     autoSubmitDelayMs: AUTO_SUBMIT_DELAY_MS,
-    noReload: true
+    noReload: true,
+    logEntries: scanLog.length
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v14 running on port ${PORT}`);
+  console.log(`Bernie's scanner v15 running on port ${PORT}`);
 });
