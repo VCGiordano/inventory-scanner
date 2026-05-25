@@ -1,17 +1,14 @@
-# Bernie's Inventory Scanner v16 - Log + PIN + No Focus Button
+# Bernie's Scanner v17 Fixed Bottom Controls
 
-Based on v14 stable scanner behavior.
+Changes from v16:
+- UNDO and LOG buttons are fixed to bottom of screen
+- Buttons now stay visible on phones and C66
+- Added bottom padding to avoid overlap
+- Slightly reduced result area height
 
-Changes:
-- Adds LOG button
-- Adds in-memory scan log viewer
-- Logs REMOVE, ADD, and UNDO actions
-- Removes FOCUS button
-- Bottom row is now only UNDO / LOG
-- PIN clears only after ADD mode successfully activates
-- Fixes bug where tapping ADD could clear PIN before ADD read it
-- More phone-safe layout
-
-Important:
-- Log is in-memory only.
-- Railway restart/redeploy clears the log.
+Keeps:
+- v14 stable scan architecture
+- no reload scanning
+- log viewer
+- undo
+- PIN fix
