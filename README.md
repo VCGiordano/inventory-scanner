@@ -1,13 +1,19 @@
-- Scans submit with fetch() to /scan-json
-- Page does not reload after each scan
-- Barcode field stays alive between scans
-- Auto-clear and refocus after every scan
-- Remove/Add mode retained
-- ADD mode requires PIN once, then session stays active until timeout
-- Undo works without page reload
-- One-screen C66 layout
-- 500ms duplicate protection default
-- 100ms auto-submit default
+# Bernie's Inventory Scanner v15 - Log + PIN Clear
+
+Based on v14 live candidate.
+
+Changes:
+- Adds LOG button
+- Adds in-memory scan log viewer
+- Logs REMOVE, ADD, and UNDO actions
+- PIN clears after entering ADD mode
+- PIN clears when leaving PIN field unless ADD mode is active
+- Does NOT touch keyboard/focus architecture beyond preserving existing v14 behavior
+
+Important:
+- Log is in-memory only.
+- Railway restart/redeploy clears the log.
+- This is intended as a simple recent scan log, not permanent audit storage.
 
 Required Railway variables:
 - SHOPIFY_STORE
@@ -21,6 +27,3 @@ Optional Railway variables:
 - ADD_MODE_TIMEOUT_SECONDS
 - DUPLICATE_SCAN_MS
 - AUTO_SUBMIT_DELAY_MS
-
-Rollback safety:
-- If this fails operational testing, roll back to v6 or last known working deployment.
