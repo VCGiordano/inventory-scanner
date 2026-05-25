@@ -24,7 +24,7 @@ const scanLog = [];
 const MAX_LOG_ENTRIES = 200;
 
 function addLogEntry(entry) {
-  scanLog.unshift({ id: crypto.randomUUID(), timestamp: new Date().toLocaleString(), ...entry });
+  scanLog.unshift({ id: crypto.randomUUID(), timestamp: new Date().toLocaleString("en-US", { timeZone: "America/New_York" }), ...entry });
   if (scanLog.length > MAX_LOG_ENTRIES) scanLog.length = MAX_LOG_ENTRIES;
 }
 
@@ -163,7 +163,7 @@ async function adjustInventory(barcode, delta) {
     sku: variant.sku,
     before: available,
     after: available + delta,
-    timestamp: new Date().toLocaleTimeString()
+    timestamp: new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York" })
   };
 }
 
@@ -517,5 +517,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v20 running on port ${PORT}`);
+  console.log(`Bernie's scanner v21 running on port ${PORT}`);
 });
