@@ -1,16 +1,11 @@
-# Bernie's Scanner v20 - Keyboard Test
+# Bernie's Scanner v21 - Timezone Fix
 
-Built from v19.
+Built from v20.
 
-Only change:
-- Adds inputmode="none" to the barcode input to try suppressing the Android soft keyboard.
-
-Does NOT change:
-- scanner behavior
-- focus behavior
-- no-reload architecture
-- LOG
-- variant display
-- ADD/REMOVE behavior
-
-If scanner input becomes unreliable, roll back to v19 immediately.
+Changes:
+- Fixes timestamps to America/New_York
+- Keeps v20 keyboard test
+- Keeps LOG
+- Keeps variant display
+- Keeps no visible UNDO
+- Does not otherwise change scanner behavior
