@@ -251,7 +251,7 @@ function renderPage(setupError = "") {
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{font-family:Arial,sans-serif;background:#0b1015;color:white;overflow:hidden}
-.screen{height:100dvh;min-height:100vh;display:flex;flex-direction:column;padding:6px;gap:5px}
+.screen{height:100dvh;min-height:100vh;display:flex;flex-direction:column;padding:6px 6px 72px 6px;gap:5px}
 .top{border-radius:14px;padding:7px 10px;text-align:center;font-weight:900;letter-spacing:.5px;font-size:21px;line-height:1.1;background:#104225;border:2px solid #2fc36b;color:#caffd8}
 .top.addActive{background:#4a3510;border-color:#f4c542;color:#ffe7a3}
 .top.processing{background:#17314a;border-color:#4da3ff;color:#d7ecff}
@@ -268,14 +268,14 @@ label{display:block;color:#aab4bf;font-size:12px;margin-bottom:3px}
 input{width:100%;font-size:23px;padding:10px;border-radius:10px;border:2px solid #526170;background:#05080b;color:white;outline:none}
 input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
 .pinBox{margin-top:5px}
-.result{flex:1;min-height:68px;border-radius:14px;padding:8px;border:2px solid #2f3b47;overflow:hidden}
+.result{flex:1;min-height:54px;border-radius:14px;padding:7px;border:2px solid #2f3b47;overflow:hidden}
 .okResult{background:#103d24;border-color:#2fc36b;color:#caffd8}
 .errorResult{background:#441616;border-color:#ff5e5e;color:#ffd0d0}
 .neutralResult{background:#141b23}
 .resultMain{font-size:24px;font-weight:900;line-height:1.05;margin-bottom:3px}
 .product{font-size:17px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .meta{font-size:12px;color:#d8e0e7;line-height:1.25;margin-top:3px}
-.bottomRow{display:grid;grid-template-columns:1fr 1fr;gap:5px;flex-shrink:0}
+.bottomRow{position:fixed;left:6px;right:6px;bottom:6px;display:grid;grid-template-columns:1fr 1fr;gap:5px;z-index:50}
 .undo{background:#f4c542;color:#171200}
 .logBtn{background:#4da3ff;color:#06111f}
 .installBox{padding:7px;border-radius:12px;background:#441616;border:1px solid #ff5e5e;text-align:center}
@@ -540,5 +540,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v16 running on port ${PORT}`);
+  console.log(`Bernie's scanner v17 running on port ${PORT}`);
 });
