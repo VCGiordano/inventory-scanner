@@ -193,6 +193,7 @@ async function processScan({ barcode, action, pin, addSession }) {
     barcode: result.barcode,
     sku: result.sku,
     productTitle: result.productTitle,
+    variantTitle: result.variantTitle,
     before: result.before,
     after: result.after,
     delta: result.delta
@@ -220,6 +221,7 @@ app.post("/undo-json", async (req, res) => {
       barcode: result.barcode,
       sku: result.sku,
       productTitle: result.productTitle,
+      variantTitle: result.variantTitle,
       before: result.before,
       after: result.after,
       delta: result.delta
@@ -275,7 +277,7 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
 .resultMain{font-size:24px;font-weight:900;line-height:1.05;margin-bottom:3px}
 .product{font-size:17px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .meta{font-size:12px;color:#d8e0e7;line-height:1.25;margin-top:3px}
-.bottomRow{position:fixed;left:6px;right:6px;bottom:6px;display:grid;grid-template-columns:1fr 1fr;gap:5px;z-index:50}
+.bottomRow{position:fixed;left:6px;right:6px;bottom:6px;display:grid;grid-template-columns:1fr;gap:5px;z-index:50}
 .undo{background:#f4c542;color:#171200}
 .logBtn{background:#4da3ff;color:#06111f}
 .installBox{padding:7px;border-radius:12px;background:#441616;border:1px solid #ff5e5e;text-align:center}
@@ -323,7 +325,6 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
   </div>
 
   <div class="bottomRow">
-    <button class="undo" id="undoBtn" type="button" disabled>UNDO</button>
     <button class="logBtn" id="logBtn" type="button">LOG</button>
   </div>
 </div>
@@ -346,7 +347,7 @@ const addSessionInput=document.getElementById('addSessionInput');
 const statusBar=document.getElementById('statusBar');
 const removeMode=document.getElementById('removeMode');
 const addMode=document.getElementById('addMode');
-const undoBtn=document.getElementById('undoBtn');
+const undoBtn=null;
 const logBtn=document.getElementById('logBtn');
 const closeLogBtn=document.getElementById('closeLogBtn');
 const logOverlay=document.getElementById('logOverlay');
@@ -431,10 +432,11 @@ async function submitScan(){
       lastResult=data.result;
       const r=data.result;
       const main=r.delta>0?'ADDED 1':'REMOVED 1';
-      const detail=htmlEscapeClient(r.productTitle)+'<br><span class="meta">SKU: '+htmlEscapeClient(r.sku||'n/a')+'<br>'+r.before+' to '+r.after+' | '+htmlEscapeClient(r.timestamp||'')+'</span>';
+      const variantLine = r.variantTitle && r.variantTitle !== 'Default Title' ? '<br>' + htmlEscapeClient(r.variantTitle) : '';
+      const detail=htmlEscapeClient(r.productTitle)+variantLine+'<br><span class="meta">SKU/Barcode: '+htmlEscapeClient(r.sku||'n/a')+'<br>'+r.before+' to '+r.after+' | '+htmlEscapeClient(r.timestamp||'')+'</span>';
       setResult('ok',main,detail);
       updateStatus(actionInput.value==='add'?'ADD MODE - '+ADD_TIMEOUT_SECONDS+'s':'READY TO SCAN',actionInput.value==='add'?'addActive':'');
-      undoBtn.disabled=false;
+
     }
   }catch(error){
     updateStatus('ERROR','errorTop');
@@ -477,31 +479,6 @@ addMode.addEventListener('click',()=>setMode('add'));
 logBtn.addEventListener('click',openLog);
 closeLogBtn.addEventListener('click',closeLog);
 
-undoBtn.addEventListener('click',async()=>{
-  if(!lastResult||isSubmitting)return;
-  isSubmitting=true;
-  updateStatus('UNDOING...','processing');
-  try{
-    const response=await fetch('/undo-json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({barcode:lastResult.barcode,undoDelta:lastResult.undoDelta})});
-    const data=await response.json();
-    if(!data.ok){
-      updateStatus('ERROR','errorTop');
-      setResult('error','ERROR',data.error||'Unknown error');
-    }else{
-      lastResult=data.result;
-      const r=data.result;
-      const detail=htmlEscapeClient(r.productTitle)+'<br><span class="meta">'+r.before+' to '+r.after+' | '+htmlEscapeClient(r.timestamp||'')+'</span>';
-      setResult('ok','UNDO COMPLETE',detail);
-      updateStatus('READY TO SCAN','');
-    }
-  }catch(error){
-    updateStatus('ERROR','errorTop');
-    setResult('error','ERROR',error.message);
-  }
-  input.value='';
-  isSubmitting=false;
-  setTimeout(forceFocus,50);
-});
 
 input.addEventListener('input',autoSubmitSoon);
 input.addEventListener('change',autoSubmitSoon);
@@ -540,5 +517,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v17 running on port ${PORT}`);
+  console.log(`Bernie's scanner v19 running on port ${PORT}`);
 });
