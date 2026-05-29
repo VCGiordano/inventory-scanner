@@ -324,7 +324,7 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
     </div>
     <div class="scanBox">
       <label>Barcode</label>
-      <input id="barcode" placeholder="Scan barcode" autofocus autocomplete="off" inputmode="none">
+      <input id="barcode" placeholder="Scan barcode" autofocus autocomplete="off">
       <div class="pinBox">
         <label>PIN for ADD only</label>
         <input id="pin" placeholder="PIN" autocomplete="off" inputmode="numeric">
@@ -554,5 +554,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v25 running on port ${PORT}`);
+  console.log(`Bernie's scanner v26 running on port ${PORT}`);
 });
