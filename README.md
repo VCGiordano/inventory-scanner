@@ -1,16 +1,20 @@
-# Bernie's Scanner v31 - Soft Keyboard Hide Attempt
+# Bernie's Scanner v32 - Global Key Capture Web-Only Keyboard Fix
 
 Built from stable v30.
 
-Only change:
-- After scanner field focus, repeatedly attempts to hide Android soft keyboard.
-
-Does NOT change:
-- barcode input architecture
-- scanner logic
-- recent feed
-- full log
-- variant rendering
-
 Goal:
-- Keyboard may briefly appear then automatically disappear while preserving stable scanning.
+- No editable barcode field, so Android keyboard should not open for scanning.
+- Scanner data is captured from page-level keydown events.
+- PIN remains the only normal input field.
+
+Keeps:
+- Recent feed
+- LOG
+- Variant/detail display
+- No visible UNDO
+- New York timestamps
+
+Important:
+- If C66 only sends scan data to focused inputs, this will not work.
+- If scan data is sent as normal key events to the page, this should fix the keyboard problem.
+- Roll back to v30 if scans beep but do not register.
