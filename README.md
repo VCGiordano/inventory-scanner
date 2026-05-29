@@ -1,14 +1,14 @@
-# Bernie's Scanner v29 - Keyboard + Log Variant Fix
+# Bernie's Scanner v30 - Stable Scanner + Full Log Variant Fix
 
-Built from latest scanner-working hidden input path.
+Built from v26 stable scanner behavior.
 
 Changes:
-- Hidden scanner receiver remains.
-- Visible scan box remains display-only.
-- Adds inputmode none only to hidden receiver.
-- Attempts to hide Android keyboard after focusing hidden receiver.
-- Forces variantTitle into scan log entries.
-- Full log displays variant/detail on line 2.
-- Recent feed displays variant/detail on line 2.
+- Keeps normal barcode input because scanner works properly there.
+- Fixes full LOG display to show product on line 1 and variant/detail on line 2.
+- Keeps recent feed.
+- Keeps LOG button.
+- Keeps New York timestamps.
 
-If scanner input fails, roll back to v26.
+Keyboard:
+- No keyboard suppression tricks in this version.
+- Reliability first.
