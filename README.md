@@ -1,15 +1,13 @@
-# Bernie's Scanner v26 - Remove Keyboard Test
+# Bernie's Scanner v27 - Hidden Scanner Input
 
-Built from v25.
+Built from last scanner-working version.
 
 Changes:
-- Removes inputmode="none" from barcode input.
-- This restores the normal editable barcode field for the C66 scanner wedge.
-- Keeps recent feed.
-- Keeps full LOG.
-- Keeps variant/detail on its own line.
-- Keeps LOG close page refresh from v25.
+- Visible barcode box is now display-only, not an editable text field.
+- Hidden offscreen input receives scanner wedge input.
+- This should prevent Android keyboard from covering the scanner screen.
+- PIN remains normal and brings up keyboard only when needed.
+- After ADD mode activation, PIN blurs and hidden scanner input refocuses.
+- Variant/detail displays on its own line in recent feed and full log.
 
-Reason:
-- C66 showed fake focus / no scan input after fresh startup and after closing LOG.
-- The keyboard suppression test is the likely cause.
+If scanner input fails, roll back to v26.
