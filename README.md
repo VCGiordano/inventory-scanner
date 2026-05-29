@@ -1,11 +1,11 @@
-# Bernie's Scanner v21 - Timezone Fix
-
-Built from v20.
+# Bernie's Scanner v23 - Recent Scan Feed
 
 Changes:
-- Fixes timestamps to America/New_York
-- Keeps v20 keyboard test
-- Keeps LOG
-- Keeps variant display
-- Keeps no visible UNDO
-- Does not otherwise change scanner behavior
+- Big center area now shows recent scans instead of only the last scan.
+- Bottom LOG button still opens the full log.
+- Recent feed shows action, time, product, variant/detail, and before/after quantity.
+- Keeps existing scanner behavior.
+
+Important:
+- Log/recent feed is in-memory only.
+- Railway restart/redeploy clears it.
