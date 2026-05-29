@@ -268,6 +268,9 @@ button,a.button{display:block;text-align:center;text-decoration:none;width:100%;
 .scanBox{background:#141b23;border:1px solid #2f3b47;border-radius:14px;padding:7px}
 label{display:block;color:#aab4bf;font-size:12px;margin-bottom:3px}
 input{width:100%;font-size:23px;padding:10px;border-radius:10px;border:2px solid #526170;background:#05080b;color:white;outline:none}
+.scanDisplay{width:100%;font-size:23px;padding:10px;border-radius:10px;border:2px solid #526170;background:#05080b;color:#bfc7d1;min-height:51px;display:flex;align-items:center}
+.scanDisplay.ready{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
+.hiddenScanner{position:fixed;left:-1000px;top:-1000px;width:1px;height:1px;opacity:.01}
 input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
 .pinBox{margin-top:5px}
 .result{flex:1;min-height:54px;border-radius:14px;padding:7px;border:2px solid #2f3b47;overflow:hidden}
@@ -324,7 +327,8 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
     </div>
     <div class="scanBox">
       <label>Barcode</label>
-      <input id="barcode" placeholder="Scan barcode" autofocus autocomplete="off">
+      <div id="barcodeDisplay" class="scanDisplay ready">Scan barcode</div>
+      <input id="barcode" class="hiddenScanner" autocomplete="off" autocapitalize="off" spellcheck="false">
       <div class="pinBox">
         <label>PIN for ADD only</label>
         <input id="pin" placeholder="PIN" autocomplete="off" inputmode="numeric">
@@ -356,6 +360,7 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
 
 <script>
 const input=document.getElementById('barcode');
+const barcodeDisplay=document.getElementById('barcodeDisplay');
 const pin=document.getElementById('pin');
 const actionInput=document.getElementById('actionInput');
 const addSessionInput=document.getElementById('addSessionInput');
@@ -382,7 +387,19 @@ function saveAddSession(token,expiresAt){localStorage.setItem('scannerMode','add
 function clearAddSession(){localStorage.setItem('scannerMode','remove');localStorage.removeItem('addSession');localStorage.removeItem('addExpiresAt');addSessionInput.value=''}
 function updateStatus(text,modeClass){statusBar.className='top'+(modeClass?' '+modeClass:'');statusBar.textContent=text}
 function htmlEscapeClient(value){return String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
-function forceFocus(){if(!input||isSubmitting||logOverlay.style.display==='block')return;if(document.activeElement!==pin){input.focus();try{input.setSelectionRange(input.value.length,input.value.length)}catch(e){}}}
+
+function setScanDisplay(value){
+  if(!barcodeDisplay) return;
+  barcodeDisplay.textContent=value&&value.trim()?value.trim():'Scan barcode';
+}
+function forceFocus(){
+  if(!input||isSubmitting||logOverlay.style.display==='block')return;
+  if(document.activeElement!==pin){
+    input.focus();
+    if(barcodeDisplay) barcodeDisplay.classList.add('ready');
+    try{input.setSelectionRange(input.value.length,input.value.length)}catch(e){}
+  }
+}
 function setResult(kind,main,detail){const cls=kind==='ok'?'okResult':kind==='error'?'errorResult':'neutralResult';resultBox.className='result '+cls;resultMain.textContent=main;resultDetail.innerHTML=detail}
 
 function renderRecentFeed(){
@@ -417,6 +434,7 @@ function setMode(mode,options={}){
     if(resetTimer){addExpiresAt=Date.now()+(ADD_TIMEOUT_SECONDS*1000);saveAddSession(token,addExpiresAt)}
     pin.value='';
     pin.blur();
+    if(document.activeElement){try{document.activeElement.blur()}catch(e){}}
     forceFocus();
     setTimeout(forceFocus,50);
     startTimer();
@@ -480,6 +498,7 @@ async function submitScan(){
     setResult('error','ERROR',error.message);
   }
   input.value='';
+  setScanDisplay('');
   isSubmitting=false;
   setTimeout(forceFocus,20);
   setTimeout(forceFocus,120);
@@ -514,11 +533,12 @@ function closeLog(){window.location.reload()}
 removeMode.addEventListener('click',()=>setMode('remove'));
 addMode.addEventListener('click',()=>setMode('add'));
 logBtn.addEventListener('click',openLog);
+if(barcodeDisplay){barcodeDisplay.addEventListener('click',()=>{forceFocus();});}
 closeLogBtn.addEventListener('click',closeLog);
 
 
-input.addEventListener('input',autoSubmitSoon);
-input.addEventListener('change',autoSubmitSoon);
+input.addEventListener('input',()=>{setScanDisplay(input.value);autoSubmitSoon();});
+input.addEventListener('change',()=>{setScanDisplay(input.value);autoSubmitSoon();});
 input.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();submitScan()}});
 
 const savedMode=localStorage.getItem('scannerMode');
@@ -526,7 +546,7 @@ const savedExpires=Number(localStorage.getItem('addExpiresAt')||0);
 const savedToken=localStorage.getItem('addSession')||'';
 if(savedMode==='add'&&savedExpires>Date.now()&&savedToken){addExpiresAt=savedExpires;setMode('add',{resetTimer:false,token:savedToken})}else{setMode('remove')}
 
-window.addEventListener('load',()=>{input.value='';forceFocus();setTimeout(forceFocus,100)});
+window.addEventListener('load',()=>{input.value='';setScanDisplay('');forceFocus();setTimeout(forceFocus,100)});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(forceFocus,100)});
 document.addEventListener('click',(event)=>{const tag=event.target.tagName.toLowerCase();if(tag!=='input'&&tag!=='button'&&tag!=='a')forceFocus()});
 setInterval(forceFocus,500);
@@ -554,5 +574,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v26 running on port ${PORT}`);
+  console.log(`Bernie's scanner v27 running on port ${PORT}`);
 });
