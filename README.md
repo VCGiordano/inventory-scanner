@@ -1,14 +1,16 @@
-# Bernie's Scanner v30 - Stable Scanner + Full Log Variant Fix
+# Bernie's Scanner v31 - Soft Keyboard Hide Attempt
 
-Built from v26 stable scanner behavior.
+Built from stable v30.
 
-Changes:
-- Keeps normal barcode input because scanner works properly there.
-- Fixes full LOG display to show product on line 1 and variant/detail on line 2.
-- Keeps recent feed.
-- Keeps LOG button.
-- Keeps New York timestamps.
+Only change:
+- After scanner field focus, repeatedly attempts to hide Android soft keyboard.
 
-Keyboard:
-- No keyboard suppression tricks in this version.
-- Reliability first.
+Does NOT change:
+- barcode input architecture
+- scanner logic
+- recent feed
+- full log
+- variant rendering
+
+Goal:
+- Keyboard may briefly appear then automatically disappear while preserving stable scanning.
