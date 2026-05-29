@@ -1,16 +1,14 @@
-# Bernie's Scanner v31 - Soft Keyboard Hide Attempt
+# Bernie's Scanner v33 - Idle Re-arm + Keyboard Hide
 
-Built from stable v30.
+Built from stable v31/v30 path.
 
-Only change:
-- After scanner field focus, repeatedly attempts to hide Android soft keyboard.
+Changes:
+- Adds idle re-arm timer.
+- If idle for about 45 seconds, barcode field blurs then refocuses.
+- Attempts to hide soft keyboard after re-arm/focus.
+- Does not change barcode input architecture.
+- Keeps stable scanner behavior.
 
-Does NOT change:
-- barcode input architecture
-- scanner logic
-- recent feed
-- full log
-- variant rendering
-
-Goal:
-- Keyboard may briefly appear then automatically disappear while preserving stable scanning.
+Purpose:
+- Fixes issue where scanner beeps but does not input after sitting idle.
+- Keyboard hide remains a best-effort bonus.
