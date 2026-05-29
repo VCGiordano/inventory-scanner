@@ -383,8 +383,6 @@ function clearAddSession(){localStorage.setItem('scannerMode','remove');localSto
 function updateStatus(text,modeClass){statusBar.className='top'+(modeClass?' '+modeClass:'');statusBar.textContent=text}
 function htmlEscapeClient(value){return String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function forceFocus(){if(!input||isSubmitting||logOverlay.style.display==='block')return;if(document.activeElement!==pin){input.focus();try{input.setSelectionRange(input.value.length,input.value.length)}catch(e){}}}
-
-function rearmScanner(){if(!input||isSubmitting)return;try{input.blur()}catch(e){}setTimeout(()=>{forceFocus()},50);setTimeout(()=>{forceFocus()},180);setTimeout(()=>{forceFocus()},400);}
 function setResult(kind,main,detail){const cls=kind==='ok'?'okResult':kind==='error'?'errorResult':'neutralResult';resultBox.className='result '+cls;resultMain.textContent=main;resultDetail.innerHTML=detail}
 
 function renderRecentFeed(){
@@ -511,7 +509,7 @@ async function openLog(){
   }
 }
 
-function closeLog(){logOverlay.style.display='none';setTimeout(rearmScanner,50)}
+function closeLog(){window.location.reload()}
 
 removeMode.addEventListener('click',()=>setMode('remove'));
 addMode.addEventListener('click',()=>setMode('add'));
@@ -528,8 +526,7 @@ const savedExpires=Number(localStorage.getItem('addExpiresAt')||0);
 const savedToken=localStorage.getItem('addSession')||'';
 if(savedMode==='add'&&savedExpires>Date.now()&&savedToken){addExpiresAt=savedExpires;setMode('add',{resetTimer:false,token:savedToken})}else{setMode('remove')}
 
-window.addEventListener('load',()=>{input.value='';rearmScanner();setTimeout(rearmScanner,100)});
-window.addEventListener('pageshow',()=>{setTimeout(rearmScanner,100)});
+window.addEventListener('load',()=>{input.value='';forceFocus();setTimeout(forceFocus,100)});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(forceFocus,100)});
 document.addEventListener('click',(event)=>{const tag=event.target.tagName.toLowerCase();if(tag!=='input'&&tag!=='button'&&tag!=='a')forceFocus()});
 setInterval(forceFocus,500);
@@ -557,5 +554,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v24 running on port ${PORT}`);
+  console.log(`Bernie's scanner v25 running on port ${PORT}`);
 });
