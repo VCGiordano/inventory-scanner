@@ -304,6 +304,9 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
 .recentProduct{font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 .recentMeta{font-size:12px;color:#d8e0e7;line-height:1.2;margin-top:2px}
 
+
+.recentVariant{font-size:14px;font-weight:900;color:#ffffff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.logVariant{font-size:15px;font-weight:900;color:#ffffff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 </style>
 </head>
 <body>
@@ -380,6 +383,8 @@ function clearAddSession(){localStorage.setItem('scannerMode','remove');localSto
 function updateStatus(text,modeClass){statusBar.className='top'+(modeClass?' '+modeClass:'');statusBar.textContent=text}
 function htmlEscapeClient(value){return String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function forceFocus(){if(!input||isSubmitting||logOverlay.style.display==='block')return;if(document.activeElement!==pin){input.focus();try{input.setSelectionRange(input.value.length,input.value.length)}catch(e){}}}
+
+function rearmScanner(){if(!input||isSubmitting)return;try{input.blur()}catch(e){}setTimeout(()=>{forceFocus()},50);setTimeout(()=>{forceFocus()},180);setTimeout(()=>{forceFocus()},400);}
 function setResult(kind,main,detail){const cls=kind==='ok'?'okResult':kind==='error'?'errorResult':'neutralResult';resultBox.className='result '+cls;resultMain.textContent=main;resultDetail.innerHTML=detail}
 
 function renderRecentFeed(){
@@ -395,7 +400,7 @@ function renderRecentFeed(){
     const variant=item.variantTitle&&item.variantTitle!=='Default Title'?' - '+htmlEscapeClient(item.variantTitle):'';
     return '<div class="recentItem '+typeClass+'">'+
       '<div class="recentTop">'+htmlEscapeClient(item.type)+' | '+htmlEscapeClient(item.timestamp||'')+'</div>'+
-      '<div class="recentProduct">'+htmlEscapeClient(item.productTitle||'')+variant+'</div>'+
+      '<div class="recentProduct">'+htmlEscapeClient(item.productTitle||'')+'</div>'+ (variant?'<div class="recentVariant">'+variant.replace(' - ','')+'</div>':'')+
       '<div class="recentMeta">'+item.before+' to '+item.after+'</div>'+
     '</div>';
   }).join('');
@@ -506,7 +511,7 @@ async function openLog(){
   }
 }
 
-function closeLog(){logOverlay.style.display='none';setTimeout(forceFocus,50)}
+function closeLog(){logOverlay.style.display='none';setTimeout(rearmScanner,50)}
 
 removeMode.addEventListener('click',()=>setMode('remove'));
 addMode.addEventListener('click',()=>setMode('add'));
@@ -523,7 +528,8 @@ const savedExpires=Number(localStorage.getItem('addExpiresAt')||0);
 const savedToken=localStorage.getItem('addSession')||'';
 if(savedMode==='add'&&savedExpires>Date.now()&&savedToken){addExpiresAt=savedExpires;setMode('add',{resetTimer:false,token:savedToken})}else{setMode('remove')}
 
-window.addEventListener('load',()=>{input.value='';forceFocus();setTimeout(forceFocus,100)});
+window.addEventListener('load',()=>{input.value='';rearmScanner();setTimeout(rearmScanner,100)});
+window.addEventListener('pageshow',()=>{setTimeout(rearmScanner,100)});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(forceFocus,100)});
 document.addEventListener('click',(event)=>{const tag=event.target.tagName.toLowerCase();if(tag!=='input'&&tag!=='button'&&tag!=='a')forceFocus()});
 setInterval(forceFocus,500);
@@ -551,5 +557,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v23 running on port ${PORT}`);
+  console.log(`Bernie's scanner v24 running on port ${PORT}`);
 });
