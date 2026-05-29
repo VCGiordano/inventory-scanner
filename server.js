@@ -375,6 +375,7 @@ const ADD_TIMEOUT_SECONDS=${ADD_MODE_TIMEOUT_SECONDS};
 const AUTO_SUBMIT_DELAY_MS=${AUTO_SUBMIT_DELAY_MS};
 
 let addExpiresAt=0,timerInterval=null,submitTimer=null,isSubmitting=false,lastResult=null;
+let lastActivityAt=Date.now();
 let recentFeed=[];
 
 function makeSessionToken(){return Math.random().toString(36).slice(2)+Date.now().toString(36)}
@@ -412,7 +413,24 @@ function renderRecentFeed(){
   }).join('');
 }
 
-function setMode(mode,options={}){
+
+function markActivity(){
+  lastActivityAt=Date.now();
+}
+
+function idleRearmScanner(){
+  if(isSubmitting || logOverlay.style.display==='block') return;
+  if(document.activeElement===pin) return;
+  try{ input.blur(); }catch(e){}
+  setTimeout(()=>{
+    forceFocus();
+    setTimeout(hideSoftKeyboard,50);
+    setTimeout(hideSoftKeyboard,200);
+    setTimeout(hideSoftKeyboard,500);
+  },80);
+}
+
+function setMode(mode,options={}){markActivity();
   const resetTimer=options.resetTimer!==false;
   const existingToken=options.token||localStorage.getItem('addSession')||'';
   actionInput.value=mode;
@@ -459,6 +477,7 @@ function prepareAddSessionIfNeeded(){
 }
 
 async function submitScan(){
+  markActivity();
   if(isSubmitting)return;
   const barcode=(input.value||'').trim();
   if(barcode.length<3)return;
@@ -494,6 +513,7 @@ async function submitScan(){
 }
 
 function autoSubmitSoon(){
+  markActivity();
   if(isSubmitting)return;
   const value=(input.value||'').trim();
   if(value.length<3)return;
@@ -501,7 +521,7 @@ function autoSubmitSoon(){
   submitTimer=setTimeout(submitScan,AUTO_SUBMIT_DELAY_MS);
 }
 
-async function openLog(){
+async function openLog(){markActivity();
   logOverlay.style.display='block';
   logList.innerHTML='<div class="meta">Loading...</div>';
   try{
@@ -522,7 +542,7 @@ async function openLog(){
   }
 }
 
-function closeLog(){window.location.reload()}
+function closeLog(){markActivity();window.location.reload()}
 
 removeMode.addEventListener('click',()=>setMode('remove'));
 addMode.addEventListener('click',()=>setMode('add'));
@@ -542,7 +562,14 @@ if(savedMode==='add'&&savedExpires>Date.now()&&savedToken){addExpiresAt=savedExp
 window.addEventListener('load',()=>{input.value='';forceFocus();setTimeout(forceFocus,100)});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(forceFocus,100)});
 document.addEventListener('click',(event)=>{const tag=event.target.tagName.toLowerCase();if(tag!=='input'&&tag!=='button'&&tag!=='a')forceFocus()});
-setInterval(forceFocus,500);
+setInterval(()=>{
+  if(Date.now()-lastActivityAt>45000){
+    lastActivityAt=Date.now();
+    idleRearmScanner();
+  }else{
+    forceFocus();
+  }
+},5000);
 forceFocus();
 </script>
 </body>
@@ -567,5 +594,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v31 running on port ${PORT}`);
+  console.log(`Bernie's scanner v33 running on port ${PORT}`);
 });
