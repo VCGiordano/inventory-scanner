@@ -328,7 +328,7 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
     <div class="scanBox">
       <label>Barcode</label>
       <div id="barcodeDisplay" class="scanDisplay ready">Scan barcode</div>
-      <input id="barcode" class="hiddenScanner" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <input id="barcode" class="hiddenScanner" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="none">
       <div class="pinBox">
         <label>PIN for ADD only</label>
         <input id="pin" placeholder="PIN" autocomplete="off" inputmode="numeric">
@@ -392,12 +392,20 @@ function setScanDisplay(value){
   if(!barcodeDisplay) return;
   barcodeDisplay.textContent=value&&value.trim()?value.trim():'Scan barcode';
 }
+
+function hideSoftKeyboard(){
+  try{
+    if(navigator.virtualKeyboard&&navigator.virtualKeyboard.hide){
+      navigator.virtualKeyboard.hide();
+    }
+  }catch(e){}
+}
 function forceFocus(){
   if(!input||isSubmitting||logOverlay.style.display==='block')return;
   if(document.activeElement!==pin){
     input.focus();
     if(barcodeDisplay) barcodeDisplay.classList.add('ready');
-    try{input.setSelectionRange(input.value.length,input.value.length)}catch(e){}
+    try{input.setSelectionRange(input.value.length,input.value.length)}catch(e){}setTimeout(hideSoftKeyboard,30);
   }
 }
 function setResult(kind,main,detail){const cls=kind==='ok'?'okResult':kind==='error'?'errorResult':'neutralResult';resultBox.className='result '+cls;resultMain.textContent=main;resultDetail.innerHTML=detail}
@@ -521,7 +529,7 @@ async function openLog(){
     if(!data.ok||!data.logs||data.logs.length===0){logList.innerHTML='<div class="meta">No scans logged yet.</div>';return}
     logList.innerHTML=data.logs.map((item)=>{
       const typeClass=item.type==='ADD'?'addType':item.type==='UNDO'?'undoType':'removeType';
-      return '<div class="logItem '+typeClass+'"><div class="logType">'+htmlEscapeClient(item.type)+' | '+htmlEscapeClient(item.timestamp)+'</div><div class="logProduct">'+htmlEscapeClient(item.productTitle||'')+'</div><div class="logMeta">SKU: '+htmlEscapeClient(item.sku||'n/a')+'<br>'+htmlEscapeClient(item.barcode||'')+'<br>'+item.before+' to '+item.after+'</div></div>';
+      return '<div class="logItem '+typeClass+'"><div class="logType">'+htmlEscapeClient(item.type)+' | '+htmlEscapeClient(item.timestamp)+'</div><div class="logProduct">'+htmlEscapeClient(item.productTitle||'')+'</div><div class="logMeta">SKU/Barcode: '+htmlEscapeClient(item.sku||'n/a')+'<br>'+htmlEscapeClient(item.barcode||'')+'<br>'+item.before+' to '+item.after+'</div></div>';
     }).join('');
   }catch(error){
     logList.innerHTML='<div class="meta">Could not load log: '+htmlEscapeClient(error.message)+'</div>';
@@ -574,5 +582,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v27 running on port ${PORT}`);
+  console.log(`Bernie's scanner v29 running on port ${PORT}`);
 });
