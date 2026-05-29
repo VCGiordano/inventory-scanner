@@ -1,13 +1,15 @@
-# Bernie's Scanner v25 - Log Close Refresh
+# Bernie's Scanner v26 - Remove Keyboard Test
 
-Built from stable v23, not v24.
+Built from v25.
 
 Changes:
-- Closing LOG now refreshes the scanner page instead of trying blur/focus re-arm.
-- This avoids the C66 fake-focus issue after viewing log.
-- Variant/detail appears on its own line in recent feed.
-- Variant/detail appears on its own line in full log.
+- Removes inputmode="none" from barcode input.
+- This restores the normal editable barcode field for the C66 scanner wedge.
+- Keeps recent feed.
+- Keeps full LOG.
+- Keeps variant/detail on its own line.
+- Keeps LOG close page refresh from v25.
 
-Important:
-- Since log is in-memory, a page refresh keeps the log as long as Railway process stays running.
-- Railway redeploy/restart still clears the in-memory log.
+Reason:
+- C66 showed fake focus / no scan input after fresh startup and after closing LOG.
+- The keyboard suppression test is the likely cause.
