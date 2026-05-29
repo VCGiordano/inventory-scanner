@@ -1,11 +1,5 @@
-# Bernie's Scanner v23 - Recent Scan Feed
+# Bernie's Scanner v24
 
-Changes:
-- Big center area now shows recent scans instead of only the last scan.
-- Bottom LOG button still opens the full log.
-- Recent feed shows action, time, product, variant/detail, and before/after quantity.
-- Keeps existing scanner behavior.
-
-Important:
-- Log/recent feed is in-memory only.
-- Railway restart/redeploy clears it.
+- Stronger scanner re-arm after closing LOG
+- Variant/detail on its own line in recent feed and full log
+- Built from v23
