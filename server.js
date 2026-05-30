@@ -295,7 +295,17 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
 .logProduct{font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
 .logMeta{font-size:12px;color:#d8e0e7;line-height:1.3;margin-top:3px}
 
+.recentList{display:flex;flex-direction:column;gap:6px;overflow:hidden;height:100%}
+.recentItem{border:1px solid #334150;border-radius:10px;padding:6px;background:#101820}
+.recentItem.addType{border-color:#2fc36b}
+.recentItem.removeType{border-color:#ff3b3b}
+.recentItem.undoType{border-color:#f4c542}
+.recentTop{font-size:15px;font-weight:900;line-height:1.1}
+.recentProduct{font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.recentVariant{font-size:14px;font-weight:900;color:#ffffff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.recentMeta{font-size:12px;color:#d8e0e7;line-height:1.2;margin-top:2px}
 .logVariant{font-size:15px;font-weight:900;color:#ffffff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+
 </style>
 </head>
 <body>
@@ -313,7 +323,7 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
     </div>
     <div class="scanBox">
       <label>Barcode</label>
-      <input id="barcode" placeholder="Scan barcode" autofocus autocomplete="off" inputmode="none">
+      <input id="barcode" placeholder="Scan barcode" autofocus autocomplete="off">
       <div class="pinBox">
         <label>PIN for ADD only</label>
         <input id="pin" placeholder="PIN" autocomplete="off" inputmode="numeric">
@@ -322,8 +332,10 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
   </form>
 
   <div id="resultBox" class="result neutralResult">
-    <div id="resultMain" class="resultMain">READY</div>
-    <div id="resultDetail" class="meta">Scan barcode. No page reload between scans.</div>
+    <div id="resultMain" class="resultMain">RECENT SCANS</div>
+    <div id="resultDetail" class="recentList">
+      <div class="meta">No scans yet.</div>
+    </div>
   </div>
 
   <div class="bottomRow">
@@ -362,6 +374,7 @@ const ADD_TIMEOUT_SECONDS=${ADD_MODE_TIMEOUT_SECONDS};
 const AUTO_SUBMIT_DELAY_MS=${AUTO_SUBMIT_DELAY_MS};
 
 let addExpiresAt=0,timerInterval=null,submitTimer=null,isSubmitting=false,lastResult=null;
+let recentFeed=[];
 
 function makeSessionToken(){return Math.random().toString(36).slice(2)+Date.now().toString(36)}
 function saveAddSession(token,expiresAt){localStorage.setItem('scannerMode','add');localStorage.setItem('addSession',token);localStorage.setItem('addExpiresAt',String(expiresAt))}
@@ -370,6 +383,26 @@ function updateStatus(text,modeClass){statusBar.className='top'+(modeClass?' '+m
 function htmlEscapeClient(value){return String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function forceFocus(){if(!input||isSubmitting||logOverlay.style.display==='block')return;if(document.activeElement!==pin){input.focus();try{input.setSelectionRange(input.value.length,input.value.length)}catch(e){}}}
 function setResult(kind,main,detail){const cls=kind==='ok'?'okResult':kind==='error'?'errorResult':'neutralResult';resultBox.className='result '+cls;resultMain.textContent=main;resultDetail.innerHTML=detail}
+
+function renderRecentFeed(){
+  resultBox.className='result neutralResult';
+  resultMain.textContent='RECENT SCANS';
+  resultDetail.className='recentList';
+  if(!recentFeed.length){
+    resultDetail.innerHTML='<div class="meta">No scans yet.</div>';
+    return;
+  }
+  resultDetail.innerHTML=recentFeed.slice(0,4).map((item)=>{
+    const typeClass=item.type==='ADD'?'addType':item.type==='UNDO'?'undoType':'removeType';
+    const variant=item.variantTitle&&item.variantTitle!=='Default Title'?htmlEscapeClient(item.variantTitle):'';
+    return '<div class="recentItem '+typeClass+'">'+
+      '<div class="recentTop">'+htmlEscapeClient(item.type)+' | '+htmlEscapeClient(item.timestamp||'')+'</div>'+
+      '<div class="recentProduct">'+htmlEscapeClient(item.productTitle||'')+'</div>'+
+      (variant?'<div class="recentVariant">'+variant+'</div>':'')+
+      '<div class="recentMeta">'+item.before+' to '+item.after+'</div>'+
+    '</div>';
+  }).join('');
+}
 
 function setMode(mode,options={}){
   const resetTimer=options.resetTimer!==false;
@@ -436,7 +469,9 @@ async function submitScan(){
       const main=r.delta>0?'ADDED 1':'REMOVED 1';
       const variantLine = r.variantTitle && r.variantTitle !== 'Default Title' ? '<br>' + htmlEscapeClient(r.variantTitle) : '';
       const detail=htmlEscapeClient(r.productTitle)+variantLine+'<br><span class="meta">SKU/Barcode: '+htmlEscapeClient(r.sku||'n/a')+'<br>'+r.before+' to '+r.after+' | '+htmlEscapeClient(r.timestamp||'')+'</span>';
-      setResult('ok',main,detail);
+      recentFeed.unshift({type:r.delta>0?'ADD':'REMOVE',productTitle:r.productTitle,variantTitle:r.variantTitle,before:r.before,after:r.after,timestamp:r.timestamp});
+      if(recentFeed.length>8)recentFeed.length=8;
+      renderRecentFeed();
       updateStatus(actionInput.value==='add'?'ADD MODE - '+ADD_TIMEOUT_SECONDS+'s':'READY TO SCAN',actionInput.value==='add'?'addActive':'');
 
     }
@@ -467,7 +502,7 @@ async function openLog(){
     if(!data.ok||!data.logs||data.logs.length===0){logList.innerHTML='<div class="meta">No scans logged yet.</div>';return}
     logList.innerHTML=data.logs.map((item)=>{
       const typeClass=item.type==='ADD'?'addType':item.type==='UNDO'?'undoType':'removeType';
-      return '<div class="logItem '+typeClass+'">'+'<div class="logType">'+htmlEscapeClient(item.type)+' | '+htmlEscapeClient(item.timestamp)+'</div>'+'<div class="logProduct">'+htmlEscapeClient(item.productTitle||'')+'</div>'+(item.variantTitle&&item.variantTitle!=='Default Title'?'<div class="logVariant">'+htmlEscapeClient(item.variantTitle)+'</div>':'')+'<div class="logMeta">SKU/Barcode: '+htmlEscapeClient(item.sku||'n/a')+'<br>'+htmlEscapeClient(item.barcode||'')+'<br>'+item.before+' to '+item.after+'</div>'+'</div>';
+      return '<div class="logItem '+typeClass+'"><div class="logType">'+htmlEscapeClient(item.type)+' | '+htmlEscapeClient(item.timestamp)+'</div><div class="logProduct">'+htmlEscapeClient(item.productTitle||'')+'</div><div class="logMeta">SKU: '+htmlEscapeClient(item.sku||'n/a')+'<br>'+htmlEscapeClient(item.barcode||'')+'<br>'+item.before+' to '+item.after+'</div></div>';
     }).join('');
   }catch(error){
     logList.innerHTML='<div class="meta">Could not load log: '+htmlEscapeClient(error.message)+'</div>';
@@ -519,5 +554,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v20b running on port ${PORT}`);
+  console.log(`Bernie's scanner v19r running on port ${PORT}`);
 });
