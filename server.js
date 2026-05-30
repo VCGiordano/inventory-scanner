@@ -24,7 +24,7 @@ const scanLog = [];
 const MAX_LOG_ENTRIES = 200;
 
 function addLogEntry(entry) {
-  scanLog.unshift({ id: crypto.randomUUID(), timestamp: new Date().toLocaleString("en-US", { timeZone: "America/New_York" }), ...entry });
+  scanLog.unshift({ id: crypto.randomUUID(), timestamp: new Date().toLocaleString(), ...entry });
   if (scanLog.length > MAX_LOG_ENTRIES) scanLog.length = MAX_LOG_ENTRIES;
 }
 
@@ -163,7 +163,7 @@ async function adjustInventory(barcode, delta) {
     sku: variant.sku,
     before: available,
     after: available + delta,
-    timestamp: new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York" })
+    timestamp: new Date().toLocaleTimeString()
   };
 }
 
@@ -295,17 +295,6 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
 .logProduct{font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
 .logMeta{font-size:12px;color:#d8e0e7;line-height:1.3;margin-top:3px}
 
-.recentList{display:flex;flex-direction:column;gap:6px;overflow:hidden;height:100%}
-.recentItem{border:1px solid #334150;border-radius:10px;padding:6px;background:#101820}
-.recentItem.addType{border-color:#2fc36b}
-.recentItem.removeType{border-color:#ff3b3b}
-.recentItem.undoType{border-color:#f4c542}
-.recentTop{font-size:15px;font-weight:900;line-height:1.1}
-.recentProduct{font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-.recentMeta{font-size:12px;color:#d8e0e7;line-height:1.2;margin-top:2px}
-
-
-.recentVariant{font-size:14px;font-weight:900;color:#ffffff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 .logVariant{font-size:15px;font-weight:900;color:#ffffff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 </style>
 </head>
@@ -324,7 +313,7 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
     </div>
     <div class="scanBox">
       <label>Barcode</label>
-      <input id="barcode" placeholder="Scan barcode" autofocus autocomplete="off">
+      <input id="barcode" placeholder="Scan barcode" autofocus autocomplete="off" inputmode="none">
       <div class="pinBox">
         <label>PIN for ADD only</label>
         <input id="pin" placeholder="PIN" autocomplete="off" inputmode="numeric">
@@ -333,10 +322,8 @@ input:focus{border-color:#4da3ff;box-shadow:0 0 0 3px rgba(77,163,255,.22)}
   </form>
 
   <div id="resultBox" class="result neutralResult">
-    <div id="resultMain" class="resultMain">RECENT SCANS</div>
-    <div id="resultDetail" class="recentList">
-      <div class="meta">No scans yet.</div>
-    </div>
+    <div id="resultMain" class="resultMain">READY</div>
+    <div id="resultDetail" class="meta">Scan barcode. No page reload between scans.</div>
   </div>
 
   <div class="bottomRow">
@@ -375,58 +362,16 @@ const ADD_TIMEOUT_SECONDS=${ADD_MODE_TIMEOUT_SECONDS};
 const AUTO_SUBMIT_DELAY_MS=${AUTO_SUBMIT_DELAY_MS};
 
 let addExpiresAt=0,timerInterval=null,submitTimer=null,isSubmitting=false,lastResult=null;
-let lastActivityAt=Date.now();
-let recentFeed=[];
 
 function makeSessionToken(){return Math.random().toString(36).slice(2)+Date.now().toString(36)}
 function saveAddSession(token,expiresAt){localStorage.setItem('scannerMode','add');localStorage.setItem('addSession',token);localStorage.setItem('addExpiresAt',String(expiresAt))}
 function clearAddSession(){localStorage.setItem('scannerMode','remove');localStorage.removeItem('addSession');localStorage.removeItem('addExpiresAt');addSessionInput.value=''}
 function updateStatus(text,modeClass){statusBar.className='top'+(modeClass?' '+modeClass:'');statusBar.textContent=text}
 function htmlEscapeClient(value){return String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
-
 function forceFocus(){if(!input||isSubmitting||logOverlay.style.display==='block')return;if(document.activeElement!==pin){input.focus();try{input.setSelectionRange(input.value.length,input.value.length)}catch(e){}}}
 function setResult(kind,main,detail){const cls=kind==='ok'?'okResult':kind==='error'?'errorResult':'neutralResult';resultBox.className='result '+cls;resultMain.textContent=main;resultDetail.innerHTML=detail}
 
-function renderRecentFeed(){
-  resultBox.className='result neutralResult';
-  resultMain.textContent='RECENT SCANS';
-  resultDetail.className='recentList';
-  if(!recentFeed.length){
-    resultDetail.innerHTML='<div class="meta">No scans yet.</div>';
-    return;
-  }
-  resultDetail.innerHTML=recentFeed.slice(0,4).map((item)=>{
-    const typeClass=item.type==='ADD'?'addType':item.type==='UNDO'?'undoType':'removeType';
-    const variant=item.variantTitle&&item.variantTitle!=='Default Title'?' - '+htmlEscapeClient(item.variantTitle):'';
-    return '<div class="recentItem '+typeClass+'">'+
-      '<div class="recentTop">'+htmlEscapeClient(item.type)+' | '+htmlEscapeClient(item.timestamp||'')+'</div>'+
-      '<div class="recentProduct">'+htmlEscapeClient(item.productTitle||'')+'</div>'+ (variant?'<div class="recentVariant">'+variant.replace(' - ','')+'</div>':'')+
-      '<div class="recentMeta">'+item.before+' to '+item.after+'</div>'+
-    '</div>';
-  }).join('');
-}
-
-
-function markActivity(){
-  lastActivityAt=Date.now();
-}
-
-function idleRearmScanner(){
-  if(isSubmitting || logOverlay.style.display==='block') return;
-  if(document.activeElement===pin) return;
-
-  try{ input.blur(); }catch(e){}
-
-  setTimeout(()=>{
-    try{
-      input.dispatchEvent(new MouseEvent('mousedown', { bubbles:true, cancelable:true }));
-      input.dispatchEvent(new MouseEvent('mouseup', { bubbles:true, cancelable:true }));
-      input.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
-    }catch(e){}
-  },80);
-}
-
-function setMode(mode,options={}){markActivity();
+function setMode(mode,options={}){
   const resetTimer=options.resetTimer!==false;
   const existingToken=options.token||localStorage.getItem('addSession')||'';
   actionInput.value=mode;
@@ -473,7 +418,6 @@ function prepareAddSessionIfNeeded(){
 }
 
 async function submitScan(){
-  markActivity();
   if(isSubmitting)return;
   const barcode=(input.value||'').trim();
   if(barcode.length<3)return;
@@ -492,9 +436,7 @@ async function submitScan(){
       const main=r.delta>0?'ADDED 1':'REMOVED 1';
       const variantLine = r.variantTitle && r.variantTitle !== 'Default Title' ? '<br>' + htmlEscapeClient(r.variantTitle) : '';
       const detail=htmlEscapeClient(r.productTitle)+variantLine+'<br><span class="meta">SKU/Barcode: '+htmlEscapeClient(r.sku||'n/a')+'<br>'+r.before+' to '+r.after+' | '+htmlEscapeClient(r.timestamp||'')+'</span>';
-      recentFeed.unshift({type:r.delta>0?'ADD':'REMOVE',productTitle:r.productTitle,variantTitle:r.variantTitle,before:r.before,after:r.after,timestamp:r.timestamp});
-      if(recentFeed.length>8)recentFeed.length=8;
-      renderRecentFeed();
+      setResult('ok',main,detail);
       updateStatus(actionInput.value==='add'?'ADD MODE - '+ADD_TIMEOUT_SECONDS+'s':'READY TO SCAN',actionInput.value==='add'?'addActive':'');
 
     }
@@ -509,7 +451,6 @@ async function submitScan(){
 }
 
 function autoSubmitSoon(){
-  markActivity();
   if(isSubmitting)return;
   const value=(input.value||'').trim();
   if(value.length<3)return;
@@ -517,7 +458,7 @@ function autoSubmitSoon(){
   submitTimer=setTimeout(submitScan,AUTO_SUBMIT_DELAY_MS);
 }
 
-async function openLog(){markActivity();
+async function openLog(){
   logOverlay.style.display='block';
   logList.innerHTML='<div class="meta">Loading...</div>';
   try{
@@ -526,19 +467,14 @@ async function openLog(){markActivity();
     if(!data.ok||!data.logs||data.logs.length===0){logList.innerHTML='<div class="meta">No scans logged yet.</div>';return}
     logList.innerHTML=data.logs.map((item)=>{
       const typeClass=item.type==='ADD'?'addType':item.type==='UNDO'?'undoType':'removeType';
-      return '<div class="logItem '+typeClass+'">'+
-        '<div class="logType">'+htmlEscapeClient(item.type)+' | '+htmlEscapeClient(item.timestamp)+'</div>'+
-        '<div class="logProduct">'+htmlEscapeClient(item.productTitle||'')+'</div>'+
-        (item.variantTitle&&item.variantTitle!=='Default Title'?'<div class="logVariant">'+htmlEscapeClient(item.variantTitle)+'</div>':'')+
-        '<div class="logMeta">SKU/Barcode: '+htmlEscapeClient(item.sku||'n/a')+'<br>'+htmlEscapeClient(item.barcode||'')+'<br>'+item.before+' to '+item.after+'</div>'+
-      '</div>';
+      return '<div class="logItem '+typeClass+'">'+'<div class="logType">'+htmlEscapeClient(item.type)+' | '+htmlEscapeClient(item.timestamp)+'</div>'+'<div class="logProduct">'+htmlEscapeClient(item.productTitle||'')+'</div>'+(item.variantTitle&&item.variantTitle!=='Default Title'?'<div class="logVariant">'+htmlEscapeClient(item.variantTitle)+'</div>':'')+'<div class="logMeta">SKU/Barcode: '+htmlEscapeClient(item.sku||'n/a')+'<br>'+htmlEscapeClient(item.barcode||'')+'<br>'+item.before+' to '+item.after+'</div>'+'</div>';
     }).join('');
   }catch(error){
     logList.innerHTML='<div class="meta">Could not load log: '+htmlEscapeClient(error.message)+'</div>';
   }
 }
 
-function closeLog(){markActivity();window.location.reload()}
+function closeLog(){logOverlay.style.display='none';setTimeout(forceFocus,50)}
 
 removeMode.addEventListener('click',()=>setMode('remove'));
 addMode.addEventListener('click',()=>setMode('add'));
@@ -558,14 +494,7 @@ if(savedMode==='add'&&savedExpires>Date.now()&&savedToken){addExpiresAt=savedExp
 window.addEventListener('load',()=>{input.value='';forceFocus();setTimeout(forceFocus,100)});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(forceFocus,100)});
 document.addEventListener('click',(event)=>{const tag=event.target.tagName.toLowerCase();if(tag!=='input'&&tag!=='button'&&tag!=='a')forceFocus()});
-setInterval(()=>{
-  if(Date.now()-lastActivityAt>45000){
-    lastActivityAt=Date.now();
-    idleRearmScanner();
-  }else{
-    forceFocus();
-  }
-},5000);
+setInterval(forceFocus,500);
 forceFocus();
 </script>
 </body>
@@ -590,5 +519,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v35 running on port ${PORT}`);
+  console.log(`Bernie's scanner v20b running on port ${PORT}`);
 });
