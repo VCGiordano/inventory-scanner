@@ -414,8 +414,16 @@ function markActivity(){
 function idleRearmScanner(){
   if(isSubmitting || logOverlay.style.display==='block') return;
   if(document.activeElement===pin) return;
+
   try{ input.blur(); }catch(e){}
-  setTimeout(()=>{ forceFocus(); },80);
+
+  setTimeout(()=>{
+    try{
+      input.dispatchEvent(new MouseEvent('mousedown', { bubbles:true, cancelable:true }));
+      input.dispatchEvent(new MouseEvent('mouseup', { bubbles:true, cancelable:true }));
+      input.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+    }catch(e){}
+  },80);
 }
 
 function setMode(mode,options={}){markActivity();
@@ -582,5 +590,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v34 running on port ${PORT}`);
+  console.log(`Bernie's scanner v35 running on port ${PORT}`);
 });
