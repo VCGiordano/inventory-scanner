@@ -1,13 +1,13 @@
-# Bernie's Scanner v34 - Idle Re-arm, No Keyboard Hide
+# Bernie's Scanner v35 - Click Re-arm Test
 
-Built from v33.
+Built from v34.
 
-Changes:
-- Keeps idle re-arm after about 45 seconds.
-- Removes keyboard-hide calls that caused keyboard popups every re-arm cycle.
-- No barcode input architecture changes.
-- Keeps stable scanner behavior.
+Change:
+- Idle re-arm no longer calls focus().
+- It blurs the barcode input, then dispatches mouse/click events to try to reactivate scanner input without reopening Android keyboard.
 
 Goal:
-- Prevent stale scanner focus after idle.
-- Stop automatic keyboard popups every 45 seconds.
+- Keep scanner from going stale after idle.
+- Avoid keyboard popping back up every idle re-arm.
+
+If scans fail after idle, roll back to v30/v31/v34.
