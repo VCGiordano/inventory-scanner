@@ -1,16 +1,14 @@
- Bernie's Scanner v20 - Keyboard Test
+# Bernie's Scanner v19 + Recent Feed + Variant Log
 
-Built from v19.
+Built from v19 branch.
 
-Only change:
-- Adds inputmode="none" to the barcode input to try suppressing the Android soft keyboard.
+Adds:
+- Center panel showing the last few scans.
+- Full LOG shows variant/detail on line 2.
+- Recent feed shows product + variant/detail.
+- Keeps v19 behavior otherwise.
 
-Does NOT change:
-- scanner behavior
-- focus behavior
-- no-reload architecture
-- LOG
-- variant display
-- ADD/REMOVE behavior
-
-If scanner input becomes unreliable, roll back to v19 immediately.
+Does not include:
+- Keyboard suppression experiments.
+- Idle re-arm experiments.
+- Hidden input experiments.
