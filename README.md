@@ -1,13 +1,16 @@
-# Bernie's Scanner v35 - Click Re-arm Test
+ Bernie's Scanner v20 - Keyboard Test
 
-Built from v34.
+Built from v19.
 
-Change:
-- Idle re-arm no longer calls focus().
-- It blurs the barcode input, then dispatches mouse/click events to try to reactivate scanner input without reopening Android keyboard.
+Only change:
+- Adds inputmode="none" to the barcode input to try suppressing the Android soft keyboard.
 
-Goal:
-- Keep scanner from going stale after idle.
-- Avoid keyboard popping back up every idle re-arm.
+Does NOT change:
+- scanner behavior
+- focus behavior
+- no-reload architecture
+- LOG
+- variant display
+- ADD/REMOVE behavior
 
-If scans fail after idle, roll back to v30/v31/v34.
+If scanner input becomes unreliable, roll back to v19 immediately.
