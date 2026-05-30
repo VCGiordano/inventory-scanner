@@ -384,14 +384,7 @@ function clearAddSession(){localStorage.setItem('scannerMode','remove');localSto
 function updateStatus(text,modeClass){statusBar.className='top'+(modeClass?' '+modeClass:'');statusBar.textContent=text}
 function htmlEscapeClient(value){return String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 
-function hideSoftKeyboard(){
-  try{
-    if(navigator.virtualKeyboard && navigator.virtualKeyboard.hide){
-      navigator.virtualKeyboard.hide();
-    }
-  }catch(e){}
-}
-function forceFocus(){if(!input||isSubmitting||logOverlay.style.display==='block')return;if(document.activeElement!==pin){input.focus();setTimeout(hideSoftKeyboard,50);setTimeout(hideSoftKeyboard,150);setTimeout(hideSoftKeyboard,300);try{input.setSelectionRange(input.value.length,input.value.length)}catch(e){}}}
+function forceFocus(){if(!input||isSubmitting||logOverlay.style.display==='block')return;if(document.activeElement!==pin){input.focus();try{input.setSelectionRange(input.value.length,input.value.length)}catch(e){}}}
 function setResult(kind,main,detail){const cls=kind==='ok'?'okResult':kind==='error'?'errorResult':'neutralResult';resultBox.className='result '+cls;resultMain.textContent=main;resultDetail.innerHTML=detail}
 
 function renderRecentFeed(){
@@ -422,12 +415,7 @@ function idleRearmScanner(){
   if(isSubmitting || logOverlay.style.display==='block') return;
   if(document.activeElement===pin) return;
   try{ input.blur(); }catch(e){}
-  setTimeout(()=>{
-    forceFocus();
-    setTimeout(hideSoftKeyboard,50);
-    setTimeout(hideSoftKeyboard,200);
-    setTimeout(hideSoftKeyboard,500);
-  },80);
+  setTimeout(()=>{ forceFocus(); },80);
 }
 
 function setMode(mode,options={}){markActivity();
@@ -594,5 +582,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner v33 running on port ${PORT}`);
+  console.log(`Bernie's scanner v34 running on port ${PORT}`);
 });
