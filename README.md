@@ -1,14 +1,13 @@
-# Bernie's Scanner v33 - Idle Re-arm + Keyboard Hide
+# Bernie's Scanner v34 - Idle Re-arm, No Keyboard Hide
 
-Built from stable v31/v30 path.
+Built from v33.
 
 Changes:
-- Adds idle re-arm timer.
-- If idle for about 45 seconds, barcode field blurs then refocuses.
-- Attempts to hide soft keyboard after re-arm/focus.
-- Does not change barcode input architecture.
+- Keeps idle re-arm after about 45 seconds.
+- Removes keyboard-hide calls that caused keyboard popups every re-arm cycle.
+- No barcode input architecture changes.
 - Keeps stable scanner behavior.
 
-Purpose:
-- Fixes issue where scanner beeps but does not input after sitting idle.
-- Keyboard hide remains a best-effort bonus.
+Goal:
+- Prevent stale scanner focus after idle.
+- Stop automatic keyboard popups every 45 seconds.
