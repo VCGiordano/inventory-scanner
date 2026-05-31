@@ -1,14 +1,12 @@
-# Bernie's Scanner v19 + Recent Feed + Variant Log
+# V39
 
-Built from v19 branch.
+Fixes:
+- formatTimestamp error
 
-Adds:
-- Center panel showing the last few scans.
-- Full LOG shows variant/detail on line 2.
-- Recent feed shows product + variant/detail.
-- Keeps v19 behavior otherwise.
+Includes:
+- NY timezone everywhere
+- recent feed
+- variant/details in feed and log
+- clean logs
 
-Does not include:
-- Keyboard suppression experiments.
-- Idle re-arm experiments.
-- Hidden input experiments.
+No keyboard experiments.
