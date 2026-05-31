@@ -517,7 +517,12 @@ async function openLog(){
     if(!data.ok||!data.logs||data.logs.length===0){logList.innerHTML='<div class="meta">No scans logged yet.</div>';return}
     logList.innerHTML=data.logs.map((item)=>{
       const typeClass=item.type==='ADD'?'addType':item.type==='UNDO'?'undoType':'removeType';
-      return '<div class="logItem '+typeClass+'"><div class="logType">'+htmlEscapeClient(item.type)+' | '+htmlEscapeClient(item.timestamp)+'</div><div class="logProduct">'+htmlEscapeClient(item.productTitle||'')+'</div><div class="logMeta">SKU: '+htmlEscapeClient(item.sku||'n/a')+'<br>'+htmlEscapeClient(item.barcode||'')+'<br>'+item.before+' to '+item.after+'</div></div>';
+      return '<div class="logItem '+typeClass+'">'+
+        '<div class="logType">'+htmlEscapeClient(item.type)+' | '+htmlEscapeClient(item.timestamp)+'</div>'+
+        '<div class="logProduct">'+htmlEscapeClient(item.productTitle||'')+'</div>'+
+        (item.variantTitle&&item.variantTitle!=='Default Title'?'<div class="logVariant">'+htmlEscapeClient(item.variantTitle)+'</div>':'')+
+        '<div class="logMeta">'+item.before+' to '+item.after+'</div>'+
+      '</div>';
     }).join('');
   }catch(error){
     logList.innerHTML='<div class="meta">Could not load log: '+htmlEscapeClient(error.message)+'</div>';
@@ -569,5 +574,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner V39 running on port ${PORT}`);
+  console.log(`Bernie's scanner V41 running on port ${PORT}`);
 });
