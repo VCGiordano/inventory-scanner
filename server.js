@@ -473,7 +473,7 @@ async function submitScan(){
       if(recentFeed.length>8)recentFeed.length=8;
       renderRecentFeed();
       updateStatus(actionInput.value==='add'?'ADD MODE - '+ADD_TIMEOUT_SECONDS+'s':'READY TO SCAN',actionInput.value==='add'?'addActive':'');
-      
+
     }
   }catch(error){
     updateStatus('ERROR','errorTop');
@@ -554,5 +554,5 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Bernie's scanner V38 running on port ${PORT}`);
+  console.log(`Bernie's scanner V39 running on port ${PORT}`);
 });
