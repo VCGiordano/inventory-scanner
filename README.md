@@ -1,12 +1,9 @@
-# V39
+# V41
+
+Based on V40.
 
 Fixes:
-- formatTimestamp error
-
-Includes:
-- NY timezone everywhere
-- recent feed
-- variant/details in feed and log
-- clean logs
-
-No keyboard experiments.
+- Full LOG no longer shows SKU/barcode.
+- Full LOG shows variant/detail on its own line.
+- Keeps NY timezone fix.
+- Keeps stable scanner behavior.
