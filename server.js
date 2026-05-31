@@ -1,3 +1,18 @@
+const NY_TIMEZONE='America/New_York';
+
+function formatTimestamp(date=new Date()){
+  return new Intl.DateTimeFormat('en-US',{
+    timeZone:'America/New_York',
+    year:'numeric',
+    month:'numeric',
+    day:'numeric',
+    hour:'numeric',
+    minute:'2-digit'
+  }).format(date);
+}
+
+
+
 const express = require("express");
 const crypto = require("crypto");
 
